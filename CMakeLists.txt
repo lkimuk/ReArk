@@ -12,19 +12,17 @@ if(MSVC)
     add_compile_options(/Zc:__cplusplus /permissive-)
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Concurrent Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Concurrent Multimedia LinguistTools)
+
+set(TS_FILES
+    "${PROJECT_SOURCE_DIR}/resources/translations/reark_zh_CN.ts"
+)
 
 set(HYLE_INSTALL_PREFIX "D:/MilesLi/hyle/install/hyle" CACHE PATH "Installed hyle package prefix")
 if(EXISTS "${HYLE_INSTALL_PREFIX}")
     list(APPEND CMAKE_PREFIX_PATH "${HYLE_INSTALL_PREFIX}")
 endif()
 find_package(hyle CONFIG REQUIRED)
-
-set(KF6_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/.deps/kf6" CACHE PATH "Installed KF6 package prefix")
-if(EXISTS "${KF6_INSTALL_PREFIX}")
-    list(APPEND CMAKE_PREFIX_PATH "${KF6_INSTALL_PREFIX}")
-endif()
-find_package(KF6SyntaxHighlighting CONFIG REQUIRED)
 
 if(WIN32)
     set(APP_ICON_PATH "${PROJECT_SOURCE_DIR}/resources/images/app_icon.ico")

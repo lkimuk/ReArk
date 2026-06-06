@@ -10,10 +10,9 @@ Rectangle {
     property Window targetWindow
     property string currentTheme: "dark"
     property string currentHighlightTheme: "GitHub Dark"
+    property bool maximized: false
     readonly property bool darkTheme: Material.theme === Material.Dark
     readonly property bool windowActive: !targetWindow || targetWindow.active
-    readonly property bool maximized: targetWindow
-                                      && targetWindow.visibility === Window.Maximized
 
     signal openRequested()
     signal themeRequested(string theme)
@@ -31,6 +30,23 @@ Rectangle {
         anchors.bottom: parent.bottom
         height: 1
         color: darkTheme ? "#4a4a4a" : "#d8d8d8"
+    }
+
+    onTargetWindowChanged: syncMaximized()
+
+    Component.onCompleted: syncMaximized()
+
+    Connections {
+        target: root.targetWindow
+        ignoreUnknownSignals: true
+
+        function onVisibilityChanged() {
+            root.syncMaximizedFromVisibility()
+        }
+
+        function onWindowStateChanged() {
+            root.syncMaximizedFromVisibility()
+        }
     }
 
     MouseArea {
@@ -141,8 +157,10 @@ Rectangle {
             return
         }
         if (maximized) {
+            maximized = false
             targetWindow.showNormal()
         } else {
+            maximized = true
             targetWindow.showMaximized()
         }
     }
@@ -155,11 +173,30 @@ Rectangle {
         const globalPosition = root.mapToGlobal(Qt.point(localX, localY))
         if (maximized) {
             const xRatio = Math.max(0, Math.min(1, localX / Math.max(1, root.width)))
+            maximized = false
             targetWindow.showNormal()
             targetWindow.x = Math.round(globalPosition.x - targetWindow.width * xRatio)
             targetWindow.y = Math.round(globalPosition.y - Math.min(localY, 16))
         }
 
         targetWindow.startSystemMove()
+    }
+
+    function isWindowMaximized() {
+        return targetWindow && windowChrome.isMaximized(targetWindow)
+    }
+
+    function syncMaximized() {
+        maximized = isWindowMaximized()
+    }
+
+    function syncMaximizedFromVisibility() {
+        if (!targetWindow) {
+            maximized = false
+            return
+        }
+        if (targetWindow.visibility === Window.Maximized) {
+            maximized = true
+        }
     }
 }

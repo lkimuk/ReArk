@@ -12,6 +12,7 @@ class WindowChrome : public QObject {
 public:
     explicit WindowChrome(QObject* parent = nullptr);
 
+    Q_INVOKABLE bool isMaximized(QWindow* window) const;
     Q_INVOKABLE void showSystemMenu(QWindow* window, const QPointF& globalPosition);
 };
 

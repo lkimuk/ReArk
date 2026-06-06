@@ -44,6 +44,7 @@ public:
     Q_INVOKABLE void activateIndex(int index);
     Q_INVOKABLE void openActivePreviewFile() const;
     Q_INVOKABLE QString formatJson(const QString& content) const;
+    Q_INVOKABLE void copyTextToClipboard(const QString& text) const;
     Q_INVOKABLE void clear();
 
 public slots:

@@ -14,6 +14,23 @@ WindowChrome::WindowChrome(QObject* parent)
 {
 }
 
+bool WindowChrome::isMaximized(QWindow* window) const
+{
+    if (!window) {
+        return false;
+    }
+
+#ifdef Q_OS_WIN
+    auto* hwnd = reinterpret_cast<HWND>(window->winId());
+    if (hwnd) {
+        return IsZoomed(hwnd) != FALSE;
+    }
+#endif
+
+    return window->visibility() == QWindow::Maximized
+        || window->windowStates().testFlag(Qt::WindowMaximized);
+}
+
 void WindowChrome::showSystemMenu(QWindow* window, const QPointF& globalPosition)
 {
     if (!window) {

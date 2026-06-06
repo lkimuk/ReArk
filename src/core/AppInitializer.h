@@ -6,6 +6,7 @@
 #include <QString>
 
 class DecompilerController;
+class LanguageController;
 class ResourcePreviewProvider;
 class WindowChrome;
 
@@ -26,6 +27,7 @@ private:
     QString initialFileUrl_;
     ResourcePreviewProvider* resourcePreviewProvider_ = nullptr;
     DecompilerController* decompilerController_ = nullptr;
+    LanguageController* languageController_ = nullptr;
     WindowChrome* windowChrome_ = nullptr;
 };
 

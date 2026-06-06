@@ -66,7 +66,7 @@ Rectangle {
         MenuBarButton {
             id: fileButton
 
-            text: "File"
+            text: qsTr("File")
             menu: fileMenu
             embedded: root.embedded
             menuNavigationActive: root.menuNavigationActive
@@ -76,7 +76,7 @@ Rectangle {
         MenuBarButton {
             id: viewButton
 
-            text: "View"
+            text: qsTr("View")
             menu: viewMenu
             embedded: root.embedded
             menuNavigationActive: root.menuNavigationActive
@@ -86,7 +86,7 @@ Rectangle {
         MenuBarButton {
             id: helpButton
 
-            text: "Help"
+            text: qsTr("Help")
             menu: helpMenu
             embedded: root.embedded
             menuNavigationActive: root.menuNavigationActive
@@ -129,20 +129,109 @@ Rectangle {
             CompactMenu {
                 title: qsTr("Theme")
                 minimumItemWidth: 150
+                delegate: MenuItem {
+                    id: themeItem
+
+                    implicitHeight: 28
+                    padding: 12
+                    verticalPadding: 4
+                    spacing: 12
+                    font.pixelSize: 13
+                    indicator: null
+
+                    contentItem: RowLayout {
+                        spacing: 12
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: themeItem.text
+                            color: themeItem.enabled ? Material.foreground : Material.hintTextColor
+                            font: themeItem.font
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        Label {
+                            Layout.preferredWidth: 18
+                            text: themeItem.checked ? "✓" : ""
+                            color: themeItem.enabled ? Material.foreground : Material.hintTextColor
+                            font: themeItem.font
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                }
 
                 Action {
                     text: qsTr("Dark")
+                    checkable: true
+                    checked: root.currentTheme === "dark"
                     onTriggered: root.themeRequested("dark")
                 }
 
                 Action {
                     text: qsTr("Light")
+                    checkable: true
+                    checked: root.currentTheme === "light"
                     onTriggered: root.themeRequested("light")
                 }
 
                 Action {
                     text: qsTr("System")
+                    checkable: true
+                    checked: root.currentTheme === "system"
                     onTriggered: root.themeRequested("system")
+                }
+            }
+
+            CompactMenu {
+                title: qsTr("Language")
+                minimumItemWidth: 150
+                delegate: MenuItem {
+                    id: languageItem
+
+                    implicitHeight: 28
+                    padding: 12
+                    verticalPadding: 4
+                    spacing: 12
+                    font.pixelSize: 13
+                    indicator: null
+
+                    contentItem: RowLayout {
+                        spacing: 12
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: languageItem.text
+                            color: languageItem.enabled ? Material.foreground : Material.hintTextColor
+                            font: languageItem.font
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        Label {
+                            Layout.preferredWidth: 18
+                            text: languageItem.checked ? "✓" : ""
+                            color: languageItem.enabled ? Material.foreground : Material.hintTextColor
+                            font: languageItem.font
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                }
+
+                Action {
+                    text: qsTr("English")
+                    checkable: true
+                    checked: languageController.currentLanguage === "en_US"
+                    onTriggered: languageController.resetLanguage()
+                }
+
+                Action {
+                    text: qsTr("Chinese")
+                    checkable: true
+                    checked: languageController.currentLanguage === "zh_CN"
+                    onTriggered: languageController.switchLanguage("zh_CN")
                 }
             }
         }

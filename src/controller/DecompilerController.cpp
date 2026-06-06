@@ -2,9 +2,11 @@
 
 #include "core/ResourcePreviewProvider.h"
 
+#include <QClipboard>
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QFutureWatcher>
+#include <QGuiApplication>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QUrl>
@@ -155,6 +157,13 @@ QString DecompilerController::formatJson(const QString& content) const
     }
 
     return QString::fromUtf8(document.toJson(QJsonDocument::Indented));
+}
+
+void DecompilerController::copyTextToClipboard(const QString& text) const
+{
+    if (auto* clipboard = QGuiApplication::clipboard()) {
+        clipboard->setText(text);
+    }
 }
 
 void DecompilerController::clear()

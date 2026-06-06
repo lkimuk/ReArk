@@ -6,10 +6,11 @@ MouseArea {
 
     required property Window targetWindow
     required property int edges
+    required property bool maximized
 
     acceptedButtons: Qt.LeftButton
     cursorShape: Qt.ArrowCursor
-    enabled: targetWindow && targetWindow.visibility !== Window.Maximized
+    enabled: targetWindow && !maximized
     hoverEnabled: true
     visible: enabled
 

@@ -1,6 +1,7 @@
 #include "core/AppInitializer.h"
 
 #include "controller/DecompilerController.h"
+#include "controller/LanguageController.h"
 #include "core/ResourcePreviewProvider.h"
 #include "core/WindowChrome.h"
 
@@ -45,12 +46,14 @@ void AppInitializer::initializeContext()
     resourcePreviewProvider_ = new ResourcePreviewProvider();
     engine_.addImageProvider(QStringLiteral("rearkResources"), resourcePreviewProvider_);
     decompilerController_ = new DecompilerController(resourcePreviewProvider_, &engine_);
+    languageController_ = new LanguageController(&engine_, &engine_);
     windowChrome_ = new WindowChrome(&engine_);
 
     auto* context = engine_.rootContext();
     context->setContextProperty(QStringLiteral("appVersion"), QStringLiteral(REARK_VERSION));
     context->setContextProperty(QStringLiteral("initialFileUrl"), initialFileUrl_);
     context->setContextProperty(QStringLiteral("decompilerController"), decompilerController_);
+    context->setContextProperty(QStringLiteral("languageController"), languageController_);
     context->setContextProperty(QStringLiteral("windowChrome"), windowChrome_);
 }
 

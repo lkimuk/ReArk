@@ -2,13 +2,6 @@
 
 #include "core/PerformanceTrace.h"
 
-#include <KSyntaxHighlighting/AbstractHighlighter>
-#include <KSyntaxHighlighting/Definition>
-#include <KSyntaxHighlighting/Format>
-#include <KSyntaxHighlighting/Repository>
-#include <KSyntaxHighlighting/State>
-#include <KSyntaxHighlighting/Theme>
-
 #include <QClipboard>
 #include <QFileInfo>
 #include <QFont>
@@ -17,6 +10,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QStringList>
 #include <QStyleHints>
 
 #include <algorithm>
@@ -62,86 +56,71 @@ int textLength(const QString& text)
     return static_cast<int>(text.size());
 }
 
-KSyntaxHighlighting::Repository& syntaxRepository()
+bool isIdentifierStart(QChar ch)
 {
-    static auto* repository = new KSyntaxHighlighting::Repository;
-    return *repository;
+    return ch.isLetter() || ch == QLatin1Char('_') || ch == QLatin1Char('$');
 }
 
-QString normalizedThemeName(const QString& themeId)
+bool isIdentifierPart(QChar ch)
 {
-    if (themeId == QStringLiteral("github-dark")) {
-        return QStringLiteral("GitHub Dark");
-    }
-    if (themeId == QStringLiteral("github-light")) {
-        return QStringLiteral("GitHub Light");
-    }
-    if (themeId == QStringLiteral("darcula")) {
-        return QStringLiteral("Dracula");
-    }
-    if (themeId == QStringLiteral("monokai")) {
-        return QStringLiteral("Monokai");
-    }
-    return themeId;
+    return ch.isLetterOrNumber() || ch == QLatin1Char('_') || ch == QLatin1Char('$');
 }
 
-KSyntaxHighlighting::Theme themeForId(const QString& themeId, bool darkFallback)
+bool isKeyword(QStringView token)
 {
-    auto& repository = syntaxRepository();
-    auto theme = repository.theme(normalizedThemeName(themeId));
-    if (theme.isValid()) {
-        return theme;
-    }
-
-    return repository.defaultTheme(darkFallback
-        ? KSyntaxHighlighting::Repository::DarkTheme
-        : KSyntaxHighlighting::Repository::LightTheme);
+    static const QStringList keywords {
+        QStringLiteral("abstract"), QStringLiteral("as"), QStringLiteral("async"),
+        QStringLiteral("await"), QStringLiteral("break"), QStringLiteral("case"),
+        QStringLiteral("catch"), QStringLiteral("class"), QStringLiteral("const"),
+        QStringLiteral("continue"), QStringLiteral("default"), QStringLiteral("delete"),
+        QStringLiteral("do"), QStringLiteral("else"), QStringLiteral("enum"),
+        QStringLiteral("export"), QStringLiteral("extends"), QStringLiteral("false"),
+        QStringLiteral("finally"), QStringLiteral("for"), QStringLiteral("from"),
+        QStringLiteral("function"), QStringLiteral("if"), QStringLiteral("import"),
+        QStringLiteral("in"), QStringLiteral("instanceof"), QStringLiteral("interface"),
+        QStringLiteral("let"), QStringLiteral("new"), QStringLiteral("null"),
+        QStringLiteral("private"), QStringLiteral("protected"), QStringLiteral("public"),
+        QStringLiteral("return"), QStringLiteral("static"), QStringLiteral("super"),
+        QStringLiteral("switch"), QStringLiteral("this"), QStringLiteral("throw"),
+        QStringLiteral("true"), QStringLiteral("try"), QStringLiteral("typeof"),
+        QStringLiteral("undefined"), QStringLiteral("var"), QStringLiteral("void"),
+        QStringLiteral("while"), QStringLiteral("yield")
+    };
+    return keywords.contains(token.toString());
 }
 
-KSyntaxHighlighting::Definition definitionForSyntax(const QString& syntax)
+bool isTypeName(QStringView token)
 {
-    auto& repository = syntaxRepository();
-    const QString trimmed = syntax.trimmed();
-    if (trimmed.isEmpty()) {
-        return {};
-    }
-
-    if (trimmed.compare(QStringLiteral("JSON"), Qt::CaseInsensitive) == 0) {
-        return repository.definitionForName(QStringLiteral("JSON"));
-    }
-
-    const QString lower = trimmed.toLower();
-    if (lower.endsWith(QStringLiteral(".ets"))) {
-        const auto definition = repository.definitionForName(QStringLiteral("TypeScript"));
-        if (definition.isValid()) {
-            return definition;
-        }
-    }
-
-    const QFileInfo fileInfo(trimmed);
-    auto definition = repository.definitionForFileName(fileInfo.fileName());
-    if (definition.isValid()) {
-        return definition;
-    }
-
-    definition = repository.definitionForName(trimmed);
-    if (definition.isValid()) {
-        return definition;
-    }
-
-    return {};
+    static const QStringList types {
+        QStringLiteral("Array"), QStringLiteral("Boolean"), QStringLiteral("Map"),
+        QStringLiteral("Number"), QStringLiteral("Object"), QStringLiteral("Promise"),
+        QStringLiteral("Record"), QStringLiteral("Set"), QStringLiteral("String"),
+        QStringLiteral("any"), QStringLiteral("bigint"), QStringLiteral("boolean"),
+        QStringLiteral("never"), QStringLiteral("number"), QStringLiteral("object"),
+        QStringLiteral("string"), QStringLiteral("symbol"), QStringLiteral("unknown")
+    };
+    return types.contains(token.toString());
 }
 
 } // namespace
 
-class CodeLineHighlighter : public KSyntaxHighlighting::AbstractHighlighter {
+class CodeLineHighlighter {
 public:
     using LineProvider = std::function<QStringView(int)>;
 
     void setInputs(const QString& syntax, const QString& themeId, bool darkTheme)
     {
-        setTheme(themeForId(themeId, darkTheme));
-        setDefinition(definitionForSyntax(syntax));
+        const QString lower = QFileInfo(syntax.trimmed()).fileName().toLower();
+        syntaxSupported_ = syntax.trimmed().isEmpty()
+            || lower.endsWith(QStringLiteral(".abc"))
+            || lower.endsWith(QStringLiteral(".ets"))
+            || lower.endsWith(QStringLiteral(".js"))
+            || lower.endsWith(QStringLiteral(".json"))
+            || lower.endsWith(QStringLiteral(".ts"))
+            || syntax.compare(QStringLiteral("JSON"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("TypeScript"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("JavaScript"), Qt::CaseInsensitive) == 0;
+        theme_ = codeThemeForId(themeId, darkTheme);
         reset();
     }
 
@@ -158,13 +137,13 @@ public:
     {
         cachedLineCount_ = 0;
         states_.clear();
-        states_.append(KSyntaxHighlighting::State());
+        states_.append(false);
     }
 
     [[nodiscard]] QVector<HighlightSegment> segmentsForLine(int line, int lineCount, const LineProvider& lineProvider)
     {
         segments_.clear();
-        if (!enabled_ || !definition().isValid() || !theme().isValid()) {
+        if (!enabled_ || !syntaxSupported_) {
             return {};
         }
 
@@ -188,24 +167,109 @@ public:
         return segments_;
     }
 
-protected:
-    void applyFormat(int offset, int length, const KSyntaxHighlighting::Format& format) override
+private:
+    void appendSegment(int offset, int length, const QColor& color)
     {
-        if (length <= 0 || !format.isValid() || !format.hasTextColor(theme())) {
+        if (length <= 0) {
             return;
         }
 
         segments_.append(HighlightSegment {
             offset,
             length,
-            format.textColor(theme())
+            color
         });
     }
 
-private:
+    [[nodiscard]] bool highlightLine(QStringView text, bool startsInBlockComment)
+    {
+        bool inBlockComment = startsInBlockComment;
+        int i = 0;
+
+        while (i < text.size()) {
+            if (inBlockComment) {
+                const int commentStart = i;
+                while (i + 1 < text.size()
+                    && !(text.at(i) == QLatin1Char('*') && text.at(i + 1) == QLatin1Char('/'))) {
+                    ++i;
+                }
+                if (i + 1 >= text.size()) {
+                    appendSegment(commentStart, static_cast<int>(text.size()) - commentStart, theme_.comment);
+                    return true;
+                }
+                i += 2;
+                appendSegment(commentStart, i - commentStart, theme_.comment);
+                inBlockComment = false;
+                continue;
+            }
+
+            const QChar ch = text.at(i);
+            if (ch == QLatin1Char('/') && i + 1 < text.size()) {
+                const QChar next = text.at(i + 1);
+                if (next == QLatin1Char('/')) {
+                    appendSegment(i, static_cast<int>(text.size()) - i, theme_.comment);
+                    return false;
+                }
+                if (next == QLatin1Char('*')) {
+                    inBlockComment = true;
+                    continue;
+                }
+            }
+
+            if (ch == QLatin1Char('"') || ch == QLatin1Char('\'') || ch == QLatin1Char('`')) {
+                const QChar quote = ch;
+                const int start = i++;
+                bool escaped = false;
+                while (i < text.size()) {
+                    const QChar current = text.at(i++);
+                    if (escaped) {
+                        escaped = false;
+                    } else if (current == QLatin1Char('\\')) {
+                        escaped = true;
+                    } else if (current == quote) {
+                        break;
+                    }
+                }
+                appendSegment(start, i - start, theme_.string);
+                continue;
+            }
+
+            if (ch.isDigit()) {
+                const int start = i++;
+                while (i < text.size()
+                    && (text.at(i).isLetterOrNumber() || text.at(i) == QLatin1Char('.')
+                        || text.at(i) == QLatin1Char('_'))) {
+                    ++i;
+                }
+                appendSegment(start, i - start, theme_.number);
+                continue;
+            }
+
+            if (isIdentifierStart(ch)) {
+                const int start = i++;
+                while (i < text.size() && isIdentifierPart(text.at(i))) {
+                    ++i;
+                }
+                const QStringView token = text.mid(start, i - start);
+                if (isKeyword(token)) {
+                    appendSegment(start, i - start, theme_.keyword);
+                } else if (isTypeName(token)) {
+                    appendSegment(start, i - start, theme_.type);
+                }
+                continue;
+            }
+
+            ++i;
+        }
+
+        return inBlockComment;
+    }
+
     bool enabled_ = false;
+    bool syntaxSupported_ = true;
     int cachedLineCount_ = 0;
-    QVector<KSyntaxHighlighting::State> states_ { KSyntaxHighlighting::State() };
+    CodeTheme theme_ = codeThemeForId(QStringLiteral("GitHub Dark"), true);
+    QVector<bool> states_ { false };
     QVector<HighlightSegment> segments_;
 };
 
@@ -483,7 +547,7 @@ void CodeEditorItem::paint(QPainter* painter)
                 expandedTabs(text.mid(start, end - start)));
         };
 
-        const auto segments = !fastScrolling_ && syntaxHighlighter_ != nullptr
+        const auto segments = syntaxHighlighter_ != nullptr
             ? syntaxHighlighter_->segmentsForLine(line, lineCount(), [this](int requestedLine) {
                   return lineView(requestedLine);
               })

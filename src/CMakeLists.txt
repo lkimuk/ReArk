@@ -11,10 +11,14 @@ qt_add_executable(${PROJECT_NAME}
     core/PerformanceTrace.h
     core/ResourcePreviewProvider.cpp
     core/ResourcePreviewProvider.h
+    core/Translator.cpp
+    core/Translator.h
     core/WindowChrome.cpp
     core/WindowChrome.h
     controller/DecompilerController.cpp
     controller/DecompilerController.h
+    controller/LanguageController.cpp
+    controller/LanguageController.h
     model/DocumentContent.h
     model/OpenFileTabsModel.cpp
     model/OpenFileTabsModel.h
@@ -28,8 +32,6 @@ qt_add_executable(${PROJECT_NAME}
     presentation/CodeEditorItem.h
     presentation/HexViewerItem.cpp
     presentation/HexViewerItem.h
-    presentation/SyntaxHighlighter.cpp
-    presentation/SyntaxHighlighter.h
     presentation/SyntaxThemeProvider.cpp
     presentation/SyntaxThemeProvider.h
     ${WIN32_RESOURCES}
@@ -47,6 +49,11 @@ qt_add_qml_module(${PROJECT_NAME}
         ReArk
     QML_FILES
         ui/qml/main.qml
+)
+
+qt_add_translations(${PROJECT_NAME}
+    TS_FILES ${TS_FILES}
+    LUPDATE_OPTIONS -no-obsolete
 )
 
 add_subdirectory(ui/qml/ReArk)
@@ -67,7 +74,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::QuickControls2
     Qt6::Concurrent
     Qt6::Multimedia
-    KF6::SyntaxHighlighting
     hyle::hyle
     reark_qml_module
     reark_qml_moduleplugin

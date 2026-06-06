@@ -105,13 +105,20 @@ Rectangle {
 
                 ListView {
                     id: fileTree
+
+                    property string contextName: ""
+                    property string contextPath: ""
+
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
+                    boundsBehavior: Flickable.StopAtBounds
                     model: hasPackage ? decompilerController.treeModel : 0
                     currentIndex: decompilerController.selectedIndex
 
                     delegate: ItemDelegate {
+                        id: fileTreeDelegate
+
                         width: fileTree.width
                         height: 28
                         leftPadding: 8 + model.depth * 16
@@ -127,14 +134,12 @@ Rectangle {
                         contentItem: RowLayout {
                             spacing: 5
 
-                            Label {
-                                Layout.preferredWidth: 10
-                                text: model.isDirectory ? (model.expanded ? "▾" : "▸") : ""
-                                color: model.isPlaceholder ? secondaryTextColor : Material.foreground
-                                opacity: model.isPlaceholder ? 0.75 : 1.0
-                                font.pixelSize: 10
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
+                            TreeDisclosureIndicator {
+                                Layout.preferredWidth: 14
+                                Layout.preferredHeight: 16
+                                expanded: model.expanded
+                                directory: model.isDirectory
+                                placeholder: model.isPlaceholder
                             }
 
                             FileTreeIcon {
@@ -158,6 +163,34 @@ Rectangle {
                             }
                         }
                         onClicked: decompilerController.activateIndex(index)
+
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.RightButton
+                            onClicked: function(mouse) {
+                                fileTree.currentIndex = index
+                                fileTree.contextName = model.name
+                                fileTree.contextPath = model.path
+                                treeContextMenu.popup(fileTreeDelegate, mouse.x, mouse.y)
+                            }
+                        }
+                    }
+
+                    CompactMenu {
+                        id: treeContextMenu
+                        minimumItemWidth: 160
+
+                        Action {
+                            text: qsTr("Copy Internal Path")
+                            enabled: fileTree.contextPath.length > 0
+                            onTriggered: decompilerController.copyTextToClipboard(fileTree.contextPath)
+                        }
+
+                        Action {
+                            text: qsTr("Copy Name")
+                            enabled: fileTree.contextName.length > 0
+                            onTriggered: decompilerController.copyTextToClipboard(fileTree.contextName)
+                        }
                     }
                 }
             }

@@ -16,18 +16,20 @@ ApplicationWindow {
     flags: Qt.WindowCloseButtonHint | Qt.CustomizeWindowHint | Qt.Dialog | Qt.WindowTitleHint
 
     property string currentTheme: "dark"
-    readonly property bool darkTheme: Material.theme === Material.Dark
+    readonly property bool darkTheme: currentTheme === "system"
+                                      ? Qt.styleHints.colorScheme === Qt.Dark
+                                      : currentTheme === "dark"
+    readonly property color backgroundColor: darkTheme ? "#15171d" : "#ffffff"
     readonly property color dividerColor: darkTheme ? "#3a404a" : "#d5dcdf"
     readonly property color secondaryTextColor: darkTheme ? "#aab2bd" : "#5f6872"
 
-    Material.theme: currentTheme === "system"
-                    ? Material.System
-                    : (currentTheme === "light" ? Material.Light : Material.Dark)
+    color: backgroundColor
+    Material.theme: darkTheme ? Material.Dark : Material.Light
     Material.accent: Material.Teal
 
     Rectangle {
         anchors.fill: parent
-        color: Material.background
+        color: aboutWindow.backgroundColor
 
         ColumnLayout {
             anchors.fill: parent
