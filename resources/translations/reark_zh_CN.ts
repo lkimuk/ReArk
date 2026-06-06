@@ -20,6 +20,22 @@
         <translation>构建日期</translation>
     </message>
     <message>
+        <source>Author</source>
+        <translation>作者</translation>
+    </message>
+    <message>
+        <source>Miles Li</source>
+        <translation>里缪</translation>
+    </message>
+    <message>
+        <source>GitHub</source>
+        <translation>GitHub</translation>
+    </message>
+    <message>
+        <source>Email</source>
+        <translation>邮箱</translation>
+    </message>
+    <message>
         <source>A lightweight desktop shell for browsing HarmonyOS package decompilation output. Hyle integration will provide the file tree and source content.</source>
         <translation>用于浏览 HarmonyOS 包反编译结果的轻量桌面界面。Hyle 集成会提供文件树和源码内容。</translation>
     </message>
@@ -37,6 +53,10 @@
     <message>
         <source>View</source>
         <translation>视图</translation>
+    </message>
+    <message>
+        <source>Navigation</source>
+        <translation>导航</translation>
     </message>
     <message>
         <source>Help</source>
@@ -85,6 +105,18 @@
     <message>
         <source>Syntax Highlight</source>
         <translation>语法高亮</translation>
+    </message>
+    <message>
+        <source>Quick Open...</source>
+        <translation>快速打开...</translation>
+    </message>
+    <message>
+        <source>Search...</source>
+        <translation>搜索...</translation>
+    </message>
+    <message>
+        <source>Entry Points</source>
+        <translation>入口点</translation>
     </message>
     <message>
         <source>About ReArk</source>
@@ -228,6 +260,79 @@
     <message>
         <source>Sound</source>
         <translation>声音</translation>
+    </message>
+</context>
+<context>
+    <name>QuickOpenDialog</name>
+    <message>
+        <source>File name or path</source>
+        <translation>文件名或路径</translation>
+    </message>
+    <message>
+        <source>No files found</source>
+        <translation>未找到文件</translation>
+    </message>
+</context>
+<context>
+    <name>SearchDialog</name>
+    <message>
+        <source>Search</source>
+        <translation>搜索</translation>
+    </message>
+    <message>
+        <source>No matches found</source>
+        <translation>未找到匹配项</translation>
+    </message>
+</context>
+<context>
+    <name>SourceTreeModel</name>
+    <message>
+        <source>// Drop a package to start decompiling.</source>
+        <translation>// 拖入包文件开始反编译。</translation>
+    </message>
+    <message>
+        <source>// Select a source file.</source>
+        <translation>// 选择一个源码文件。</translation>
+    </message>
+    <message>
+        <source>// Decompiling selected source file...</source>
+        <translation>// 正在反编译选中的源码文件...</translation>
+    </message>
+    <message>
+        <source>Summary</source>
+        <translation>摘要</translation>
+    </message>
+    <message>
+        <source>APK signature</source>
+        <translation>APK 签名</translation>
+    </message>
+    <message>
+        <source>Module descriptor</source>
+        <translation>模块描述文件</translation>
+    </message>
+    <message>
+        <source>App descriptor</source>
+        <translation>应用描述文件</translation>
+    </message>
+    <message>
+        <source>Main pages</source>
+        <translation>主页面</translation>
+    </message>
+    <message>
+        <source>Entry ability</source>
+        <translation>入口 Ability</translation>
+    </message>
+    <message>
+        <source>First page</source>
+        <translation>第一个页面文件</translation>
+    </message>
+    <message>
+        <source>Resource index</source>
+        <translation>资源索引</translation>
+    </message>
+    <message>
+        <source>First source file</source>
+        <translation>第一个源码文件</translation>
     </message>
 </context>
 <context>

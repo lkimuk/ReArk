@@ -8,6 +8,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 
 #include <memory>
 #include <deque>
@@ -43,6 +44,10 @@ public:
     Q_INVOKABLE void decompileFile(const QString& filePath);
     Q_INVOKABLE void activateIndex(int index);
     Q_INVOKABLE void openActivePreviewFile() const;
+    Q_INVOKABLE QVariantList quickOpenCandidates(const QString& query) const;
+    Q_INVOKABLE QVariantList searchCandidates(const QString& query) const;
+    Q_INVOKABLE QVariantList entryPointCandidates() const;
+    Q_INVOKABLE void navigateToNode(int nodeIndex);
     Q_INVOKABLE QString formatJson(const QString& content) const;
     Q_INVOKABLE void copyTextToClipboard(const QString& text) const;
     Q_INVOKABLE void clear();

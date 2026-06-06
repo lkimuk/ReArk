@@ -11,6 +11,7 @@ Rectangle {
     property string currentHighlightTheme: "GitHub Dark"
     property bool embedded: false
     property bool menuNavigationActive: false
+    property var entryPointItems: []
     readonly property bool darkTheme: Material.theme === Material.Dark
 
     signal openRequested()
@@ -35,8 +36,14 @@ Rectangle {
         if (viewMenu !== menu) {
             viewMenu.close()
         }
+        if (navigationMenu !== menu) {
+            navigationMenu.close()
+        }
         if (helpMenu !== menu) {
             helpMenu.close()
+        }
+        if (navigationMenu === menu) {
+            entryPointItems = decompilerController.entryPointCandidates()
         }
         if (!menu.visible) {
             menu.popup(source, 0, source.height)
@@ -44,7 +51,7 @@ Rectangle {
     }
 
     function anyMenuVisible() {
-        return fileMenu.visible || viewMenu.visible || helpMenu.visible
+        return fileMenu.visible || viewMenu.visible || navigationMenu.visible || helpMenu.visible
     }
 
     function leaveMenuNavigationWhenClosed() {
@@ -84,6 +91,16 @@ Rectangle {
         }
 
         MenuBarButton {
+            id: navigationButton
+
+            text: qsTr("Navigation")
+            menu: navigationMenu
+            embedded: root.embedded
+            menuNavigationActive: root.menuNavigationActive
+            onMenuRequested: function(source, menu, toggle) { root.showMenu(source, menu, toggle) }
+        }
+
+        MenuBarButton {
             id: helpButton
 
             text: qsTr("Help")
@@ -105,8 +122,23 @@ Rectangle {
     }
 
     Shortcut {
+        sequence: "Alt+N"
+        onActivated: root.showMenu(navigationButton, navigationMenu, false)
+    }
+
+    Shortcut {
         sequence: "Alt+H"
         onActivated: root.showMenu(helpButton, helpMenu, false)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+P"
+        onActivated: quickOpenDialog.openWithFocus()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+F"
+        onActivated: searchDialog.openWithFocus()
     }
 
     CompactMenu {
@@ -313,6 +345,52 @@ Rectangle {
     }
 
     CompactMenu {
+        id: navigationMenu
+        minimumItemWidth: 210
+        onClosed: root.leaveMenuNavigationWhenClosed()
+
+        Action {
+            text: qsTr("Quick Open...")
+            shortcut: "Ctrl+P"
+            onTriggered: quickOpenDialog.openWithFocus()
+        }
+
+        Action {
+            text: qsTr("Search...")
+            shortcut: "Ctrl+Shift+F"
+            onTriggered: searchDialog.openWithFocus()
+        }
+
+        CompactMenuSeparator {}
+
+        CompactMenu {
+            id: entryPointsMenu
+
+            title: qsTr("Entry Points")
+            enabled: root.entryPointItems.length > 0
+            minimumItemWidth: 210
+
+            Instantiator {
+                model: root.entryPointItems
+
+                delegate: Action {
+                    text: modelData.subtitle
+                    enabled: modelData.nodeIndex !== undefined
+                    onTriggered: decompilerController.navigateToNode(modelData.nodeIndex)
+                }
+
+                onObjectAdded: function(index, object) {
+                    entryPointsMenu.insertAction(index, object)
+                }
+
+                onObjectRemoved: function(index, object) {
+                    entryPointsMenu.removeAction(object)
+                }
+            }
+        }
+    }
+
+    CompactMenu {
         id: helpMenu
         onClosed: root.leaveMenuNavigationWhenClosed()
 
@@ -330,5 +408,13 @@ Rectangle {
                 }
             }
         }
+    }
+
+    QuickOpenDialog {
+        id: quickOpenDialog
+    }
+
+    SearchDialog {
+        id: searchDialog
     }
 }

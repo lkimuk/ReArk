@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <QRegularExpression>
+#include <QSet>
 #include <QString>
 #include <utility>
 
@@ -39,6 +41,13 @@ QByteArray documentBinary(const std::shared_ptr<DocumentContent>& document)
 QString documentDiagnostics(const std::shared_ptr<DocumentContent>& document)
 {
     return document ? document->diagnostics : QString{};
+}
+
+bool containsAllTerms(const QString& haystack, const QStringList& terms)
+{
+    return std::ranges::all_of(terms, [&haystack](const QString& term) {
+        return haystack.contains(term);
+    });
 }
 
 } // namespace
@@ -275,6 +284,158 @@ bool SourceTreeModel::nodeEligibleForBackgroundLoad(int nodeIndex) const
         && node.contentMode == QStringLiteral("text");
 }
 
+QVariantList SourceTreeModel::navigationCandidates(const QString& query, int limit) const
+{
+    struct Match {
+        int nodeIndex = -1;
+        int score = 0;
+        QString path;
+    };
+
+    const QString trimmed = query.trimmed();
+    const QString foldedQuery = trimmed.toCaseFolded();
+    const QStringList terms = queryTerms(trimmed);
+    std::vector<Match> matches;
+
+    for (int nodeIndex = 0; nodeIndex < static_cast<int>(nodes_.size()); ++nodeIndex) {
+        const auto& node = nodes_.at(static_cast<std::size_t>(nodeIndex));
+        if (node.directory || node.placeholder) {
+            continue;
+        }
+
+        const QString foldedName = node.name.toCaseFolded();
+        const QString foldedPath = node.path.toCaseFolded();
+        const QString foldedSearchText = foldedName + QLatin1Char(' ') + foldedPath;
+        if (!terms.empty() && !containsAllTerms(foldedSearchText, terms)) {
+            continue;
+        }
+
+        int score = trimmed.isEmpty() ? 1 : 100;
+        if (!foldedQuery.isEmpty()) {
+            if (foldedName == foldedQuery || foldedPath == foldedQuery) {
+                score += 1000;
+            } else if (foldedName.startsWith(foldedQuery)) {
+                score += 800;
+            } else if (foldedPath.endsWith(QLatin1Char('/') + foldedQuery)) {
+                score += 700;
+            } else if (foldedName.contains(foldedQuery)) {
+                score += 500;
+            } else if (foldedPath.contains(foldedQuery)) {
+                score += 250;
+            }
+            score += std::max(0, 120 - static_cast<int>(node.path.size()));
+        }
+
+        matches.push_back({ nodeIndex, score, node.path });
+    }
+
+    std::ranges::sort(matches, [](const Match& left, const Match& right) {
+        if (left.score != right.score) {
+            return left.score > right.score;
+        }
+        return sortName(left.path) < sortName(right.path);
+    });
+
+    QVariantList result;
+    const int maxCount = limit <= 0 ? 80 : limit;
+    for (const Match& match : matches) {
+        if (result.size() >= maxCount) {
+            break;
+        }
+        result.append(navigationCandidateForNode(match.nodeIndex));
+    }
+    return result;
+}
+
+QVariantList SourceTreeModel::entryPointCandidates() const
+{
+    QVariantList result;
+    QSet<int> usedNodes;
+
+    const auto addFirst = [this, &result, &usedNodes](const QString& title, auto predicate) {
+        for (int nodeIndex = 0; nodeIndex < static_cast<int>(nodes_.size()); ++nodeIndex) {
+            const auto& node = nodes_.at(static_cast<std::size_t>(nodeIndex));
+            if (node.directory || node.placeholder || usedNodes.contains(nodeIndex) || !predicate(node)) {
+                continue;
+            }
+            result.append(navigationCandidateForNode(nodeIndex, title));
+            usedNodes.insert(nodeIndex);
+            return;
+        }
+    };
+
+    addFirst(tr("Summary"), [](const TreeNode& node) {
+        return node.section == QStringLiteral("summary") || node.name == QStringLiteral("Summary");
+    });
+    addFirst(tr("APK signature"), [](const TreeNode& node) {
+        return node.section == QStringLiteral("signature") || node.name == QStringLiteral("APK signature");
+    });
+    addFirst(tr("Module descriptor"), [](const TreeNode& node) {
+        const QString path = node.path.toCaseFolded();
+        return path.endsWith(QStringLiteral("module.json5")) || path.endsWith(QStringLiteral("module.json"));
+    });
+    addFirst(tr("App descriptor"), [](const TreeNode& node) {
+        const QString path = node.path.toCaseFolded();
+        return path.endsWith(QStringLiteral("app.json5")) || path.endsWith(QStringLiteral("app.json"));
+    });
+    addFirst(tr("Main pages"), [](const TreeNode& node) {
+        return node.path.toCaseFolded().contains(QStringLiteral("main_pages.json"));
+    });
+    addFirst(tr("Entry ability"), [](const TreeNode& node) {
+        return node.path.toCaseFolded().contains(QStringLiteral("entryability"));
+    });
+    addFirst(tr("First page"), [](const TreeNode& node) {
+        const QString path = node.path.toCaseFolded();
+        return node.section == QStringLiteral("source") && path.contains(QStringLiteral("/pages/"));
+    });
+    addFirst(tr("Resource index"), [](const TreeNode& node) {
+        return node.kind == QStringLiteral("RESOURCE_INDEX");
+    });
+    addFirst(tr("First source file"), [](const TreeNode& node) {
+        return node.section == QStringLiteral("source");
+    });
+
+    return result;
+}
+
+QVariantList SourceTreeModel::loadedContentSearchResults(const QString& query, int limit) const
+{
+    const QString trimmed = query.trimmed();
+    if (trimmed.isEmpty()) {
+        return {};
+    }
+
+    const QString foldedQuery = trimmed.toCaseFolded();
+    const QStringList terms = queryTerms(trimmed);
+    QVariantList result;
+    const int maxCount = limit <= 0 ? 80 : limit;
+
+    for (int nodeIndex = 0; nodeIndex < static_cast<int>(nodes_.size()); ++nodeIndex) {
+        if (result.size() >= maxCount) {
+            break;
+        }
+
+        const auto& node = nodes_.at(static_cast<std::size_t>(nodeIndex));
+        const QString content = documentText(node.document);
+        if (node.directory || node.placeholder || content.isEmpty()) {
+            continue;
+        }
+
+        const QString foldedPath = node.path.toCaseFolded();
+        const QString foldedContent = content.toCaseFolded();
+        const QString combined = foldedPath + QLatin1Char('\n') + foldedContent;
+        if (!containsAllTerms(combined, terms)
+            && !foldedContent.contains(foldedQuery)
+            && !foldedPath.contains(foldedQuery)) {
+            continue;
+        }
+
+        result.append(navigationCandidateForNode(nodeIndex, searchSnippet(content, trimmed)));
+    }
+
+    return result;
+}
+
 std::vector<int> SourceTreeModel::prioritizedPreloadNodeIndices(int centerNode, int maxCount) const
 {
     std::vector<int> result;
@@ -364,6 +525,37 @@ void SourceTreeModel::setNodeContent(int nodeIndex, std::shared_ptr<DocumentCont
         emit selectedContentChanged();
         emit diagnosticsChanged();
     }
+}
+
+bool SourceTreeModel::activateNode(int nodeIndex)
+{
+    if (nodeIndex < 0 || nodeIndex >= static_cast<int>(nodes_.size())) {
+        return false;
+    }
+
+    bool expandedChanged = false;
+    for (int parent = nodes_.at(static_cast<std::size_t>(nodeIndex)).parent;
+         parent >= 0;
+         parent = nodes_.at(static_cast<std::size_t>(parent)).parent) {
+        auto& parentNode = nodes_.at(static_cast<std::size_t>(parent));
+        if (parentNode.directory && !parentNode.expanded) {
+            parentNode.expanded = true;
+            expandedChanged = true;
+        }
+    }
+
+    if (expandedChanged) {
+        beginResetModel();
+        rebuildVisibleRows();
+        endResetModel();
+    }
+
+    const auto& node = nodes_.at(static_cast<std::size_t>(nodeIndex));
+    if (node.directory || node.placeholder) {
+        return false;
+    }
+    setSelectedNode(nodeIndex, true);
+    return true;
 }
 
 void SourceTreeModel::activateIndex(int index)
@@ -715,6 +907,60 @@ bool SourceTreeModel::isNodeVisible(int nodeIndex) const
     return rowForNode(nodeIndex) >= 0;
 }
 
+QVariantMap SourceTreeModel::navigationCandidateForNode(int nodeIndex, const QString& subtitle) const
+{
+    QVariantMap candidate;
+    if (nodeIndex < 0 || nodeIndex >= static_cast<int>(nodes_.size())) {
+        return candidate;
+    }
+
+    const auto& node = nodes_.at(static_cast<std::size_t>(nodeIndex));
+    candidate.insert(QStringLiteral("nodeIndex"), nodeIndex);
+    candidate.insert(QStringLiteral("name"), node.name);
+    candidate.insert(QStringLiteral("path"), node.path);
+    candidate.insert(QStringLiteral("kind"), node.kind);
+    candidate.insert(QStringLiteral("section"), node.section);
+    candidate.insert(QStringLiteral("contentMode"), node.contentMode);
+    candidate.insert(QStringLiteral("subtitle"), subtitle.isEmpty() ? node.path : subtitle);
+    return candidate;
+}
+
+QString SourceTreeModel::searchSnippet(const QString& text, const QString& query) const
+{
+    const QString foldedText = text.toCaseFolded();
+    const QString foldedQuery = query.toCaseFolded();
+    int position = foldedText.indexOf(foldedQuery);
+
+    if (position < 0) {
+        const QStringList terms = queryTerms(query);
+        for (const QString& term : terms) {
+            position = foldedText.indexOf(term);
+            if (position >= 0) {
+                break;
+            }
+        }
+    }
+    if (position < 0) {
+        return {};
+    }
+
+    const int start = std::max(0, position - 48);
+    const int end = std::min(text.size(), position + query.size() + 96);
+    QString snippet = text.mid(start, end - start).simplified();
+    if (start > 0) {
+        snippet.prepend(QStringLiteral("... "));
+    }
+    if (end < text.size()) {
+        snippet.append(QStringLiteral(" ..."));
+    }
+    return snippet;
+}
+
+QStringList SourceTreeModel::queryTerms(const QString& query) const
+{
+    return query.toCaseFolded().split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+}
+
 void SourceTreeModel::setSelectedNode(int nodeIndex, bool activateFile)
 {
     if (nodeIndex < -1 || nodeIndex >= static_cast<int>(nodes_.size())) {
@@ -723,6 +969,12 @@ void SourceTreeModel::setSelectedNode(int nodeIndex, bool activateFile)
     const int previousRow = selectedIndex();
     const int previousNode = selectedNode_;
     if (selectedNode_ == nodeIndex) {
+        if (activateFile && selectedNode_ >= 0) {
+            const auto& node = nodes_.at(static_cast<std::size_t>(selectedNode_));
+            if (!node.directory && !node.placeholder) {
+                emit fileActivated(selectedNode_);
+            }
+        }
         return;
     }
     selectedNode_ = nodeIndex;

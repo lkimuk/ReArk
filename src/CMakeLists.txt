@@ -66,6 +66,14 @@ qt_add_resources(${PROJECT_NAME} "images"
         "${CMAKE_SOURCE_DIR}/resources/images/app_icon.png"
 )
 
+qt_add_resources(${PROJECT_NAME} "icons"
+    PREFIX "/icons"
+    BASE "${CMAKE_SOURCE_DIR}/resources/icons"
+    FILES
+        "${CMAKE_SOURCE_DIR}/resources/icons/email.svg"
+        "${CMAKE_SOURCE_DIR}/resources/icons/github.svg"
+)
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Core
     Qt6::Gui

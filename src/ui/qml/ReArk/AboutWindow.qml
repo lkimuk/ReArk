@@ -22,6 +22,8 @@ ApplicationWindow {
     readonly property color backgroundColor: darkTheme ? "#15171d" : "#ffffff"
     readonly property color dividerColor: darkTheme ? "#3a404a" : "#d5dcdf"
     readonly property color secondaryTextColor: darkTheme ? "#aab2bd" : "#5f6872"
+    readonly property string githubUrl: "https://github.com/lkimuk/ReArk"
+    readonly property string emailAddress: "lkimuk@cppmore.com"
 
     color: backgroundColor
     Material.theme: darkTheme ? Material.Dark : Material.Light
@@ -72,7 +74,7 @@ ApplicationWindow {
 
             Rectangle {
                 Layout.fillWidth: true
-                height: 1
+                Layout.preferredHeight: 1
                 color: aboutWindow.dividerColor
             }
 
@@ -106,6 +108,18 @@ ApplicationWindow {
                     font.pointSize: 10
                     color: Material.foreground
                 }
+
+                Text {
+                    text: qsTr("Author")
+                    font.pointSize: 10
+                    color: aboutWindow.secondaryTextColor
+                }
+
+                Text {
+                    text: qsTr("Miles Li")
+                    font.pointSize: 10
+                    color: Material.foreground
+                }
             }
 
             Text {
@@ -119,6 +133,57 @@ ApplicationWindow {
 
             Item {
                 Layout.fillHeight: true
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 10
+
+                Repeater {
+                    model: [
+                        {
+                            "kind": "github",
+                            "tooltip": qsTr("GitHub"),
+                            "url": aboutWindow.githubUrl
+                        },
+                        {
+                            "kind": "email",
+                            "tooltip": qsTr("Email"),
+                            "url": "mailto:" + aboutWindow.emailAddress
+                        }
+                    ]
+
+                    delegate: ToolButton {
+                        id: contactButton
+
+                        required property var modelData
+                        readonly property string iconKind: modelData.kind
+                        readonly property string targetUrl: modelData.url
+
+                        Layout.preferredWidth: 32
+                        Layout.preferredHeight: 32
+                        padding: 0
+                        display: AbstractButton.IconOnly
+                        icon.source: contactButton.iconKind === "github"
+                                     ? "qrc:/icons/github.svg"
+                                     : "qrc:/icons/email.svg"
+                        icon.width: 22
+                        icon.height: 22
+                        icon.color: aboutWindow.darkTheme ? "#f2f4f8" : "#20242b"
+                        hoverEnabled: true
+                        ToolTip.text: modelData.tooltip
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 400
+                        onClicked: Qt.openUrlExternally(targetUrl)
+
+                        background: Rectangle {
+                            radius: 4
+                            color: contactButton.hovered
+                                   ? (aboutWindow.darkTheme ? "#2b313a" : "#e8eef0")
+                                   : "transparent"
+                        }
+                    }
+                }
             }
 
             Text {

@@ -6,6 +6,9 @@
 #include <QAbstractListModel>
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
+#include <QVariantList>
+#include <QVariantMap>
 
 #include <cstddef>
 #include <memory>
@@ -69,10 +72,14 @@ public:
     [[nodiscard]] QString nodeContentMode(int nodeIndex) const;
     [[nodiscard]] bool nodeNeedsLoad(int nodeIndex) const;
     [[nodiscard]] bool nodeEligibleForBackgroundLoad(int nodeIndex) const;
+    [[nodiscard]] QVariantList navigationCandidates(const QString& query, int limit) const;
+    [[nodiscard]] QVariantList entryPointCandidates() const;
+    [[nodiscard]] QVariantList loadedContentSearchResults(const QString& query, int limit) const;
     [[nodiscard]] std::vector<int> prioritizedPreloadNodeIndices(int centerNode, int maxCount) const;
 
     void replaceFiles(std::vector<DecompiledSourceFile> files);
     void setNodeContent(int nodeIndex, std::shared_ptr<DocumentContent> document);
+    bool activateNode(int nodeIndex);
     Q_INVOKABLE void activateIndex(int index);
 
 public slots:
@@ -111,6 +118,9 @@ private:
     [[nodiscard]] int rowForNode(int nodeIndex) const;
     [[nodiscard]] int firstFileNode() const;
     [[nodiscard]] bool isNodeVisible(int nodeIndex) const;
+    [[nodiscard]] QVariantMap navigationCandidateForNode(int nodeIndex, const QString& subtitle = {}) const;
+    [[nodiscard]] QString searchSnippet(const QString& text, const QString& query) const;
+    [[nodiscard]] QStringList queryTerms(const QString& query) const;
     void setSelectedNode(int nodeIndex, bool activateFile);
     void emitSelectedChanged(int previousRow, int previousNode);
 

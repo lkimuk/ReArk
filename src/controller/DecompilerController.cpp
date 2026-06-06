@@ -148,6 +148,26 @@ void DecompilerController::openActivePreviewFile() const
     }
 }
 
+QVariantList DecompilerController::quickOpenCandidates(const QString& query) const
+{
+    return treeModel_.navigationCandidates(query, 80);
+}
+
+QVariantList DecompilerController::searchCandidates(const QString& query) const
+{
+    return treeModel_.loadedContentSearchResults(query, 80);
+}
+
+QVariantList DecompilerController::entryPointCandidates() const
+{
+    return treeModel_.entryPointCandidates();
+}
+
+void DecompilerController::navigateToNode(int nodeIndex)
+{
+    treeModel_.activateNode(nodeIndex);
+}
+
 QString DecompilerController::formatJson(const QString& content) const
 {
     QJsonParseError parseError;
