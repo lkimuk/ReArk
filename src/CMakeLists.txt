@@ -5,6 +5,8 @@ qt_add_executable(${PROJECT_NAME}
     main.cpp
     core/AppInitializer.cpp
     core/AppInitializer.h
+    core/ApplicationController.cpp
+    core/ApplicationController.h
     core/BuildInfoProvider.cpp
     core/BuildInfoProvider.h
     core/HyleDecompiler.cpp

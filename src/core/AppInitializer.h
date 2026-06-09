@@ -6,6 +6,7 @@
 #include <QString>
 
 class BuildInfoProvider;
+class ApplicationController;
 class DecompilerController;
 class LanguageController;
 class RecentFilesModel;
@@ -28,6 +29,7 @@ private:
     QGuiApplication& app_;
     QQmlApplicationEngine& engine_;
     QString initialFileUrl_;
+    ApplicationController* applicationController_ = nullptr;
     BuildInfoProvider* buildInfoProvider_ = nullptr;
     ResourcePreviewProvider* resourcePreviewProvider_ = nullptr;
     RecentFilesModel* recentFilesModel_ = nullptr;

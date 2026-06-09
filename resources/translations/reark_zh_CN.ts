@@ -71,6 +71,10 @@
         <translation>帮助</translation>
     </message>
     <message>
+        <source>New Window</source>
+        <translation>新窗口</translation>
+    </message>
+    <message>
         <source>Open...</source>
         <translation>打开...</translation>
     </message>

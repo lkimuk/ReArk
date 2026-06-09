@@ -3,6 +3,7 @@
 #include "controller/DecompilerController.h"
 #include "controller/LanguageController.h"
 #include "controller/UpdateController.h"
+#include "core/ApplicationController.h"
 #include "core/BuildInfoProvider.h"
 #include "core/ResourcePreviewProvider.h"
 #include "core/WindowChrome.h"
@@ -48,6 +49,7 @@ void AppInitializer::initializeContext()
 {
     resourcePreviewProvider_ = new ResourcePreviewProvider();
     engine_.addImageProvider(QStringLiteral("rearkResources"), resourcePreviewProvider_);
+    applicationController_ = new ApplicationController(&engine_);
     decompilerController_ = new DecompilerController(resourcePreviewProvider_, &engine_);
     languageController_ = new LanguageController(&engine_, &engine_);
     buildInfoProvider_ = new BuildInfoProvider(languageController_, &engine_);
@@ -57,6 +59,7 @@ void AppInitializer::initializeContext()
 
     auto* context = engine_.rootContext();
     context->setContextProperty(QStringLiteral("appVersion"), QStringLiteral(REARK_VERSION));
+    context->setContextProperty(QStringLiteral("applicationController"), applicationController_);
     context->setContextProperty(QStringLiteral("buildInfo"), buildInfoProvider_);
     context->setContextProperty(QStringLiteral("recentFilesModel"), recentFilesModel_);
     context->setContextProperty(QStringLiteral("initialFileUrl"), initialFileUrl_);

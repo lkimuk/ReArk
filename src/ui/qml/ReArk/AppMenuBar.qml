@@ -150,6 +150,14 @@ Rectangle {
         onClosed: root.leaveMenuNavigationWhenClosed()
 
         Action {
+            text: qsTr("New Window")
+            shortcut: "Ctrl+Shift+N"
+            onTriggered: applicationController.openNewWindow()
+        }
+
+        CompactMenuSeparator {}
+
+        Action {
             text: qsTr("Open...")
             shortcut: StandardKey.Open
             onTriggered: root.openRequested()
