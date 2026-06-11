@@ -23,6 +23,8 @@ qt_add_executable(${PROJECT_NAME}
     controller/DecompilerController.h
     controller/AgentSettings.cpp
     controller/AgentSettings.h
+    controller/AgentKnowledgeController.cpp
+    controller/AgentKnowledgeController.h
     controller/AgentController.cpp
     controller/AgentController.h
     controller/LanguageController.cpp

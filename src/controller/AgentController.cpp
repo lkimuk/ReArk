@@ -8,6 +8,7 @@
 #endif
 
 #include "controller/AgentSettings.h"
+#include "controller/AgentKnowledgeController.h"
 #include "controller/DecompilerController.h"
 
 #include <QClipboard>
@@ -41,6 +42,7 @@ QString fromStringView(std::string_view value)
 
 struct ReArkToolContext {
     std::shared_ptr<const DecompilerController::AgentSnapshot> snapshot;
+    AgentKnowledgeController* knowledgeController = nullptr;
     std::stop_token stopToken;
 };
 
@@ -458,10 +460,43 @@ struct explain_signature {
     }
 };
 
+struct search_reference_knowledge {
+    static constexpr std::string_view description =
+        "Search user-provided reference documents attached to the current ReArk Agent chat. "
+        "Use this for HarmonyOS, reverse engineering, security, or app analysis background knowledge.";
+
+    wuwe::field<std::string> query {
+        .description = "The technical question or concept to search in the attached reference documents."
+    };
+    wuwe::field<int> limit {
+        .default_value = 6,
+        .description = "Maximum number of cited reference chunks to return."
+    };
+
+    wuwe::llm_tool_result invoke(const ReArkToolContext& context) const
+    {
+        if (auto cancelled = cancelledToolResult(context)) {
+            return *cancelled;
+        }
+        if (context.knowledgeController == nullptr) {
+            return { .content = "No ReArk reference knowledge controller is available." };
+        }
+        return {
+            .content = toStdString(context.knowledgeController->searchReferencesForAgent(
+                QString::fromStdString(query.value),
+                limit.value,
+                context.stopToken))
+        };
+    }
+};
+
 class ReArkToolProvider {
 public:
-    explicit ReArkToolProvider(std::shared_ptr<const DecompilerController::AgentSnapshot> snapshot)
+    explicit ReArkToolProvider(
+        std::shared_ptr<const DecompilerController::AgentSnapshot> snapshot,
+        AgentKnowledgeController* knowledgeController)
         : snapshot_(std::move(snapshot))
+        , knowledgeController_(knowledgeController)
     {
         registerTool<summarize_package>();
         registerTool<list_files>();
@@ -470,6 +505,9 @@ public:
         registerTool<read_disassembly>();
         registerTool<inspect_entry_points>();
         registerTool<explain_signature>();
+        if (knowledgeController_ != nullptr && knowledgeController_->hasReadyReferences()) {
+            registerTool<search_reference_knowledge>();
+        }
     }
 
     std::vector<wuwe::llm_tool> tools() const
@@ -484,6 +522,7 @@ public:
     {
         ReArkToolContext context {
             .snapshot = snapshot_,
+            .knowledgeController = knowledgeController_,
             .stopToken = stopToken
         };
 
@@ -511,6 +550,7 @@ private:
     }
 
     std::shared_ptr<const DecompilerController::AgentSnapshot> snapshot_;
+    AgentKnowledgeController* knowledgeController_ = nullptr;
     std::vector<wuwe::llm_tool> tools_;
     std::unordered_map<std::string, std::function<wuwe::llm_tool_result(
         const std::string&,
@@ -554,9 +594,13 @@ struct AgentController::Runtime {
 #endif
 };
 
-AgentController::AgentController(DecompilerController* decompilerController, QObject* parent)
+AgentController::AgentController(
+    DecompilerController* decompilerController,
+    AgentKnowledgeController* knowledgeController,
+    QObject* parent)
     : QObject(parent)
     , decompilerController_(decompilerController)
+    , knowledgeController_(knowledgeController)
     , runtime_(std::make_unique<Runtime>())
 {
     setStatus(available() ? tr("Ready") : unavailableMessage());
@@ -654,7 +698,7 @@ void AgentController::ask(const QString& question)
         .referer_url = "https://www.cppmore.com/",
         .app_title = "ReArk"
     });
-    runtime_->provider = std::make_shared<ReArkToolProvider>(snapshot);
+    runtime_->provider = std::make_shared<ReArkToolProvider>(snapshot, knowledgeController_);
     runtime_->runner = std::make_unique<wuwe::llm_agent_runner>(
         *runtime_->client,
         runtime_->provider);
@@ -673,8 +717,17 @@ void AgentController::ask(const QString& question)
         .content =
             "You are an expert HarmonyOS NEXT application reverse engineering assistant embedded in ReArk. "
             "Use ReArk tools whenever you need package, source, disassembly, resource, signature, or entry-point data. "
+            "When user-provided reference documents are attached, use search_reference_knowledge for external "
+            "HarmonyOS, reverse engineering, security, or app analysis knowledge before giving detailed conclusions. "
             "Be concise, evidence-based, and mention when requested data is not loaded yet."
     });
+    if (knowledgeController_ != nullptr && knowledgeController_->hasReadyReferences()) {
+        request.messages.push_back({
+            .role = "system",
+            .content = toStdString(QStringLiteral("Attached reference documents for this chat:\n%1")
+                .arg(knowledgeController_->referenceSummaryForPrompt()))
+        });
+    }
     request.messages.push_back({
         .role = "system",
         .content = toStdString(QStringLiteral("Current ReArk snapshot:\n%1")
@@ -814,6 +867,9 @@ void AgentController::newChat()
     resetRun();
     setRunning(false);
     clearMessages();
+    if (knowledgeController_ != nullptr) {
+        knowledgeController_->clearSessionReferences();
+    }
     setErrorMessage({});
     setStatus(available() ? tr("Ready") : unavailableMessage());
 }

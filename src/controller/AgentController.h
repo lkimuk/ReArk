@@ -10,6 +10,7 @@
 #include <stop_token>
 
 class DecompilerController;
+class AgentKnowledgeController;
 
 class AgentController : public QObject {
     Q_OBJECT
@@ -22,7 +23,10 @@ class AgentController : public QObject {
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
 
 public:
-    explicit AgentController(DecompilerController* decompilerController, QObject* parent = nullptr);
+    explicit AgentController(
+        DecompilerController* decompilerController,
+        AgentKnowledgeController* knowledgeController,
+        QObject* parent = nullptr);
     ~AgentController() override;
 
     [[nodiscard]] bool available() const;
@@ -62,6 +66,7 @@ private:
     [[nodiscard]] QString unavailableMessage() const;
 
     DecompilerController* decompilerController_ = nullptr;
+    AgentKnowledgeController* knowledgeController_ = nullptr;
     std::unique_ptr<Runtime> runtime_;
     QString transcript_;
     QVariantList messages_;

@@ -2,19 +2,26 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects
 import QtQuick.Controls.Material
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
 Rectangle {
     id: root
 
     property var agentController: null
+    property var agentKnowledgeController: null
     property string draftText: ""
     property int copiedMessageIndex: -1
+    property string pendingReferenceUrl: ""
 
     readonly property bool darkTheme: Material.theme === Material.Dark
     readonly property bool agentAvailable: agentController !== null && agentController.available
     readonly property bool agentRunning: agentController !== null && agentController.running
     readonly property var agentMessages: agentController !== null ? agentController.messages : []
+    readonly property var referenceDocuments: agentKnowledgeController !== null ? agentKnowledgeController.references : []
+    readonly property bool referenceBusy: agentKnowledgeController !== null && agentKnowledgeController.busy
+    readonly property string referenceStatus: agentKnowledgeController !== null ? agentKnowledgeController.status : ""
+    readonly property string referenceFailureText: firstReferenceError()
     readonly property bool hasMessages: agentController !== null && agentController.hasMessages
     readonly property string agentError: agentController !== null ? agentController.errorMessage : ""
     readonly property string agentStatus: agentController !== null ? agentController.status : ""
@@ -24,6 +31,10 @@ Rectangle {
     readonly property string statusText: agentError.length > 0
             ? agentError
             : (!agentAvailable ? unavailableStatus : agentStatus)
+    readonly property bool canSendPrompt: agentAvailable
+            && !agentRunning
+            && !referenceBusy
+            && draftText.trim().length > 0
 
     readonly property color pageTopColor: darkTheme ? "#111923" : "#e8f0fb"
     readonly property color pageBottomColor: darkTheme ? "#0d121a" : "#f4f8fc"
@@ -44,6 +55,16 @@ Rectangle {
     readonly property real panelShadowOpacity: darkTheme ? 0.28 : 0.13
     readonly property real buttonShadowOpacity: darkTheme ? 0.22 : 0.1
     readonly property int contentWidth: Math.min(930, Math.max(660, width - 264))
+
+    function firstReferenceError() {
+        for (let i = 0; i < referenceDocuments.length; ++i) {
+            const item = referenceDocuments[i]
+            if (item.state === "failed" && item.error && item.error.length > 0) {
+                return item.error
+            }
+        }
+        return ""
+    }
 
     gradient: Gradient {
         GradientStop {
@@ -341,11 +362,11 @@ Rectangle {
 
             anchors.left: parent.left
             anchors.right: sendButton.left
-            anchors.top: parent.top
-            anchors.bottom: toolRow.top
+            anchors.top: referenceFlow.visible ? referenceFlow.bottom : parent.top
+            anchors.bottom: statusLabel.visible ? statusLabel.top : toolRow.top
             anchors.leftMargin: 18
             anchors.rightMargin: 16
-            anchors.topMargin: 18
+            anchors.topMargin: referenceFlow.visible ? 10 : 18
             anchors.bottomMargin: 8
             wrapMode: TextEdit.Wrap
             color: root.primaryTextColor
@@ -376,6 +397,88 @@ Rectangle {
             }
         }
 
+        Flow {
+            id: referenceFlow
+
+            anchors.left: parent.left
+            anchors.right: sendButton.left
+            anchors.top: parent.top
+            anchors.leftMargin: 18
+            anchors.rightMargin: 14
+            anchors.topMargin: 10
+            spacing: 7
+            visible: root.referenceDocuments.length > 0
+
+            Repeater {
+                model: root.referenceDocuments
+
+                Rectangle {
+                    required property var modelData
+
+                    height: 24
+                    width: Math.min(230, chipText.implicitWidth + 54)
+                    radius: height / 2
+                    color: root.darkTheme ? "#1d2a3a" : "#edf4ff"
+                    border.width: 1
+                    border.color: modelData.state === "failed"
+                                  ? "#ef6f75"
+                                  : (root.darkTheme ? "#33445c" : "#cbd8ee")
+                    ToolTip.text: modelData.error || ""
+                    ToolTip.visible: chipHover.hovered && ToolTip.text.length > 0
+                    ToolTip.delay: 350
+
+                    HoverHandler {
+                        id: chipHover
+                    }
+
+                    Label {
+                        id: chipText
+
+                        anchors.left: parent.left
+                        anchors.right: removeReferenceButton.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 5
+                        text: modelData.displayName + " · " + modelData.stateLabel
+                        color: modelData.state === "failed" ? "#ef6f75" : root.secondaryTextColor
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
+
+                    AbstractButton {
+                        id: removeReferenceButton
+
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: 6
+                        width: 14
+                        height: 14
+                        padding: 0
+                        hoverEnabled: true
+
+                        contentItem: Icon {
+                            name: "close"
+                            color: root.mutedTextColor
+                            width: 9
+                            height: 9
+                            anchors.centerIn: parent
+                        }
+                        background: Rectangle {
+                            radius: 7
+                            color: removeReferenceButton.hovered
+                                   ? (root.darkTheme ? "#26384d" : "#dbe7fb")
+                                   : "transparent"
+                        }
+                        onClicked: {
+                            if (root.agentKnowledgeController !== null) {
+                                root.agentKnowledgeController.removeReference(modelData.id)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Label {
             anchors.left: promptInput.left
             anchors.top: promptInput.top
@@ -386,16 +489,21 @@ Rectangle {
         }
 
         Label {
+            id: statusLabel
+
             anchors.left: promptInput.left
             anchors.right: sendButton.left
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 14
+            anchors.bottom: toolRow.visible ? toolRow.top : parent.bottom
+            anchors.bottomMargin: toolRow.visible ? 7 : 14
             text: root.statusText
             color: root.agentError.length > 0 ? "#ef6f75" : root.secondaryTextColor
             font.pixelSize: 11
             elide: Text.ElideRight
             visible: text.length > 0
-                && (!root.agentAvailable || root.agentRunning || root.agentError.length > 0 || !toolRow.visible)
+                && (!root.agentAvailable
+                    || root.agentRunning
+                    || root.agentError.length > 0
+                    || !toolRow.visible)
         }
 
         Row {
@@ -405,25 +513,56 @@ Rectangle {
             anchors.bottom: parent.bottom
             anchors.leftMargin: 26
             anchors.bottomMargin: 23
-            spacing: 19
+            spacing: 12
             visible: root.agentAvailable && root.agentError.length === 0 && !root.agentRunning
 
-            Icon {
-                name: "paperclip"
-                color: root.iconColor
-                width: 15
-                height: 15
-                strokeWidth: 1.9
-                anchors.verticalCenter: parent.verticalCenter
+            AbstractButton {
+                id: referenceButton
+
+                width: 18
+                height: 18
+                padding: 0
+                hoverEnabled: true
+                enabled: root.agentKnowledgeController !== null && !root.referenceBusy
+                opacity: enabled ? 1.0 : 0.42
+                ToolTip.text: root.referenceBusy ? root.referenceStatus : qsTr("Add reference knowledge")
+                ToolTip.visible: hovered
+                ToolTip.delay: 450
+
+                background: Rectangle {
+                    radius: 4
+                    color: referenceButton.hovered
+                           ? (root.darkTheme ? "#202b3a" : "#e7edf7")
+                           : "transparent"
+                }
+
+                contentItem: Icon {
+                    name: "paperclip"
+                    color: root.iconColor
+                    width: 15
+                    height: 15
+                    strokeWidth: 1.9
+                    anchors.centerIn: parent
+                }
+
+                onClicked: referenceMenu.popup(referenceButton, 0, referenceButton.height + 4)
             }
 
-            Icon {
-                name: "diamond"
-                color: root.iconColor
-                width: 15
-                height: 15
-                strokeWidth: 1.9
+            Label {
+                width: Math.min(280, implicitWidth)
                 anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Reference indexing failed. Check settings.")
+                color: "#ef6f75"
+                font.pixelSize: 11
+                elide: Text.ElideRight
+                visible: root.referenceFailureText.length > 0
+                ToolTip.text: root.referenceFailureText
+                ToolTip.visible: statusHover.hovered && root.referenceFailureText.length > 0
+                ToolTip.delay: 350
+
+                HoverHandler {
+                    id: statusHover
+                }
             }
         }
 
@@ -444,8 +583,10 @@ Rectangle {
             iconColor: "#ffffff"
             toolTipText: root.agentRunning
                 ? qsTr("Cancel")
-                : (!root.agentAvailable ? qsTr("Smart analysis unavailable") : qsTr("Send"))
-            enabled: root.agentAvailable && (root.agentRunning || root.draftText.trim().length > 0)
+                : (root.referenceBusy
+                   ? qsTr("Wait for reference indexing to finish")
+                   : (!root.agentAvailable ? qsTr("Smart analysis unavailable") : qsTr("Send")))
+            enabled: root.agentAvailable && (root.agentRunning || root.canSendPrompt)
             opacity: enabled ? 1.0 : 0.55
             onClicked: {
                 if (root.agentRunning) {
@@ -468,6 +609,88 @@ Rectangle {
         }
     }
 
+    Menu {
+        id: referenceMenu
+
+        MenuItem {
+            text: qsTr("Add Reference File...")
+            onTriggered: referenceFileDialog.open()
+        }
+
+        MenuItem {
+            text: qsTr("Add Reference Folder...")
+            onTriggered: referenceFolderDialog.open()
+        }
+
+        MenuItem {
+            text: qsTr("Add Web Page...")
+            onTriggered: referenceUrlDialog.open()
+        }
+
+        MenuSeparator {}
+
+        MenuItem {
+            text: qsTr("Clear References")
+            enabled: root.referenceDocuments.length > 0
+            onTriggered: {
+                if (root.agentKnowledgeController !== null) {
+                    root.agentKnowledgeController.clearSessionReferences()
+                }
+            }
+        }
+    }
+
+    FileDialog {
+        id: referenceFileDialog
+
+        title: qsTr("Add Reference File")
+        nameFilters: [
+            qsTr("Reference documents (*.md *.markdown *.txt *.html *.htm *.rtf *.csv *.json *.pdf *.docx *.pptx *.xlsx)"),
+            qsTr("All files (*)")
+        ]
+        onAccepted: {
+            if (root.agentKnowledgeController !== null) {
+                root.agentKnowledgeController.addReferenceFile(selectedFile)
+            }
+        }
+    }
+
+    FolderDialog {
+        id: referenceFolderDialog
+
+        title: qsTr("Add Reference Folder")
+        onAccepted: {
+            if (root.agentKnowledgeController !== null) {
+                root.agentKnowledgeController.addReferenceFolder(selectedFolder)
+            }
+        }
+    }
+
+    Dialog {
+        id: referenceUrlDialog
+
+        title: qsTr("Add Web Page")
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        width: Math.min(520, root.width - 80)
+
+        contentItem: TextField {
+            id: referenceUrlField
+
+            placeholderText: qsTr("https://example.com/article")
+            selectByMouse: true
+            text: root.pendingReferenceUrl
+            onTextChanged: root.pendingReferenceUrl = text
+        }
+
+        onAccepted: {
+            if (root.agentKnowledgeController !== null) {
+                root.agentKnowledgeController.addReferenceUrl(root.pendingReferenceUrl)
+            }
+            root.pendingReferenceUrl = ""
+        }
+    }
+
     Timer {
         id: copiedResetTimer
 
@@ -477,13 +700,10 @@ Rectangle {
     }
 
     function submitPrompt() {
-        if (!root.agentAvailable || root.agentRunning) {
+        if (!root.canSendPrompt) {
             return
         }
         const text = root.draftText.trim()
-        if (text.length <= 0) {
-            return
-        }
         root.agentController.ask(text)
         root.draftText = ""
         promptInput.text = ""

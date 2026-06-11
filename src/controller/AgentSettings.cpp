@@ -17,8 +17,15 @@ constexpr auto kAgentApiKeyKey = "Agent/ApiKey";
 constexpr auto kAgentProtectedApiKeyKey = "Agent/ApiKeyProtected";
 constexpr auto kAgentModelKey = "Agent/Model";
 constexpr auto kAgentRequireApiKeyKey = "Agent/RequireApiKey";
+constexpr auto kAgentEmbeddingBaseUrlKey = "Agent/EmbeddingBaseUrl";
+constexpr auto kAgentEmbeddingApiKeyKey = "Agent/EmbeddingApiKey";
+constexpr auto kAgentProtectedEmbeddingApiKeyKey = "Agent/EmbeddingApiKeyProtected";
+constexpr auto kAgentEmbeddingModelKey = "Agent/EmbeddingModel";
+constexpr auto kAgentEmbeddingRequireApiKeyKey = "Agent/EmbeddingRequireApiKey";
+constexpr auto kAgentTikaUrlKey = "Agent/TikaUrl";
 constexpr auto kDefaultBaseUrl = "https://openrouter.ai/api";
 constexpr auto kDefaultModel = "openai/gpt-4o-mini";
+constexpr auto kDefaultEmbeddingModel = "text-embedding-3-small";
 
 QString envString(const char* name)
 {
@@ -104,24 +111,49 @@ QString unprotectSecret(const QString& protectedSecret)
 }
 #endif
 
-QString loadApiKey(QSettings& settings)
+QString loadProtectedKey(
+    QSettings& settings,
+    const char* protectedKeyName,
+    const char* legacyKeyName,
+    const QString& fallback)
 {
-    const QString protectedKey = settings.value(QString::fromLatin1(kAgentProtectedApiKeyKey)).toString();
+    const QString protectedKey = settings.value(QString::fromLatin1(protectedKeyName)).toString();
     if (!protectedKey.isEmpty()) {
         return unprotectSecret(protectedKey);
     }
 
-    const QString legacyPlaintextKey = settings.value(QString::fromLatin1(kAgentApiKeyKey)).toString();
+    const QString legacyPlaintextKey = settings.value(QString::fromLatin1(legacyKeyName)).toString();
     if (!legacyPlaintextKey.isEmpty()) {
-        settings.remove(QString::fromLatin1(kAgentApiKeyKey));
+        settings.remove(QString::fromLatin1(legacyKeyName));
         const QByteArray protectedLegacyKey = protectSecret(legacyPlaintextKey);
         if (!protectedLegacyKey.isEmpty()) {
-            settings.setValue(QString::fromLatin1(kAgentProtectedApiKeyKey), QString::fromLatin1(protectedLegacyKey));
+            settings.setValue(QString::fromLatin1(protectedKeyName), QString::fromLatin1(protectedLegacyKey));
         }
         return legacyPlaintextKey;
     }
 
-    return AgentSettingsStore::defaultApiKey();
+    return fallback;
+}
+
+bool saveProtectedKey(
+    QSettings& settings,
+    const char* protectedKeyName,
+    const char* legacyKeyName,
+    const QString& key)
+{
+    settings.remove(QString::fromLatin1(legacyKeyName));
+    settings.remove(QString::fromLatin1(protectedKeyName));
+    if (key.isEmpty()) {
+        return true;
+    }
+
+    const QByteArray protectedKey = protectSecret(key);
+    if (protectedKey.isEmpty()) {
+        return false;
+    }
+
+    settings.setValue(QString::fromLatin1(protectedKeyName), QString::fromLatin1(protectedKey));
+    return true;
 }
 
 } // namespace
@@ -131,37 +163,50 @@ AgentSettings AgentSettingsStore::load()
     QSettings settings;
     AgentSettings result;
     result.baseUrl = settings.value(QString::fromLatin1(kAgentBaseUrlKey), defaultBaseUrl()).toString().trimmed();
-    result.apiKey = loadApiKey(settings);
+    result.apiKey = loadProtectedKey(
+        settings,
+        kAgentProtectedApiKeyKey,
+        kAgentApiKeyKey,
+        defaultApiKey());
     result.model = settings.value(QString::fromLatin1(kAgentModelKey), defaultModel()).toString().trimmed();
     result.requireApiKey = settings.value(
         QString::fromLatin1(kAgentRequireApiKeyKey),
         envBool("REARK_LLM_REQUIRE_API_KEY", defaultRequireApiKey(result.baseUrl))).toBool();
+    result.embeddingBaseUrl = settings.value(
+        QString::fromLatin1(kAgentEmbeddingBaseUrlKey),
+        defaultEmbeddingBaseUrl()).toString().trimmed();
+    result.embeddingApiKey = loadProtectedKey(
+        settings,
+        kAgentProtectedEmbeddingApiKeyKey,
+        kAgentEmbeddingApiKeyKey,
+        defaultEmbeddingApiKey());
+    result.embeddingModel = settings.value(
+        QString::fromLatin1(kAgentEmbeddingModelKey),
+        defaultEmbeddingModel()).toString().trimmed();
+    result.embeddingRequireApiKey = settings.value(
+        QString::fromLatin1(kAgentEmbeddingRequireApiKeyKey),
+        envBool("REARK_EMBEDDING_REQUIRE_API_KEY", defaultEmbeddingRequireApiKey(result.embeddingBaseUrl))).toBool();
+    result.tikaUrl = settings.value(QString::fromLatin1(kAgentTikaUrlKey), defaultTikaUrl()).toString().trimmed();
     return result;
 }
 
 bool AgentSettingsStore::save(const AgentSettings& settings)
 {
-    QByteArray protectedKey;
-    if (!settings.apiKey.isEmpty()) {
-        protectedKey = protectSecret(settings.apiKey);
-        if (protectedKey.isEmpty()) {
-            return false;
-        }
-    }
-
     QSettings qsettings;
     qsettings.setValue(QString::fromLatin1(kAgentBaseUrlKey), settings.baseUrl.trimmed());
     qsettings.setValue(QString::fromLatin1(kAgentModelKey), settings.model.trimmed());
     qsettings.setValue(QString::fromLatin1(kAgentRequireApiKeyKey), settings.requireApiKey);
-    qsettings.remove(QString::fromLatin1(kAgentApiKeyKey));
-    qsettings.remove(QString::fromLatin1(kAgentProtectedApiKeyKey));
+    qsettings.setValue(QString::fromLatin1(kAgentEmbeddingBaseUrlKey), settings.embeddingBaseUrl.trimmed());
+    qsettings.setValue(QString::fromLatin1(kAgentEmbeddingModelKey), settings.embeddingModel.trimmed());
+    qsettings.setValue(QString::fromLatin1(kAgentEmbeddingRequireApiKeyKey), settings.embeddingRequireApiKey);
+    qsettings.setValue(QString::fromLatin1(kAgentTikaUrlKey), settings.tikaUrl.trimmed());
 
-    if (settings.apiKey.isEmpty()) {
-        return true;
-    }
-
-    qsettings.setValue(QString::fromLatin1(kAgentProtectedApiKeyKey), QString::fromLatin1(protectedKey));
-    return true;
+    return saveProtectedKey(qsettings, kAgentProtectedApiKeyKey, kAgentApiKeyKey, settings.apiKey)
+        && saveProtectedKey(
+            qsettings,
+            kAgentProtectedEmbeddingApiKeyKey,
+            kAgentEmbeddingApiKeyKey,
+            settings.embeddingApiKey);
 }
 
 void AgentSettingsStore::reset()
@@ -172,6 +217,12 @@ void AgentSettingsStore::reset()
     settings.remove(QString::fromLatin1(kAgentProtectedApiKeyKey));
     settings.remove(QString::fromLatin1(kAgentModelKey));
     settings.remove(QString::fromLatin1(kAgentRequireApiKeyKey));
+    settings.remove(QString::fromLatin1(kAgentEmbeddingBaseUrlKey));
+    settings.remove(QString::fromLatin1(kAgentEmbeddingApiKeyKey));
+    settings.remove(QString::fromLatin1(kAgentProtectedEmbeddingApiKeyKey));
+    settings.remove(QString::fromLatin1(kAgentEmbeddingModelKey));
+    settings.remove(QString::fromLatin1(kAgentEmbeddingRequireApiKeyKey));
+    settings.remove(QString::fromLatin1(kAgentTikaUrlKey));
 }
 
 QString AgentSettingsStore::validationMessage(const AgentSettings& settings)
@@ -198,6 +249,39 @@ QString AgentSettingsStore::validationMessage(const AgentSettings& settings)
     return {};
 }
 
+QString AgentSettingsStore::knowledgeValidationMessage(const AgentSettings& settings)
+{
+    const QString baseUrl = settings.embeddingBaseUrl.trimmed();
+    if (baseUrl.isEmpty()) {
+        return QCoreApplication::translate("AgentSettings", "Embedding Base URL is required before adding reference knowledge.");
+    }
+
+    const QUrl url(baseUrl);
+    if (!url.isValid() || url.scheme().isEmpty() || url.host().isEmpty()
+        || (url.scheme() != QStringLiteral("http") && url.scheme() != QStringLiteral("https"))) {
+        return QCoreApplication::translate("AgentSettings", "Embedding Base URL must be a valid HTTP or HTTPS endpoint.");
+    }
+
+    if (settings.embeddingModel.trimmed().isEmpty()) {
+        return QCoreApplication::translate("AgentSettings", "Embedding model is required before adding reference knowledge.");
+    }
+
+    if (settings.embeddingRequireApiKey && settings.embeddingApiKey.isEmpty()) {
+        return QCoreApplication::translate("AgentSettings", "Embedding API key is required for this endpoint.");
+    }
+
+    const QString tikaUrl = settings.tikaUrl.trimmed();
+    if (!tikaUrl.isEmpty()) {
+        const QUrl tika(tikaUrl);
+        if (!tika.isValid() || tika.scheme().isEmpty() || tika.host().isEmpty()
+            || (tika.scheme() != QStringLiteral("http") && tika.scheme() != QStringLiteral("https"))) {
+            return QCoreApplication::translate("AgentSettings", "Tika URL must be a valid HTTP or HTTPS endpoint.");
+        }
+    }
+
+    return {};
+}
+
 QString AgentSettingsStore::defaultBaseUrl()
 {
     const QString configured = envString("REARK_LLM_BASE_URL");
@@ -219,4 +303,35 @@ QString AgentSettingsStore::defaultModel()
 bool AgentSettingsStore::defaultRequireApiKey(const QString& baseUrl)
 {
     return !looksLocalEndpoint(baseUrl.isEmpty() ? defaultBaseUrl() : baseUrl.trimmed());
+}
+
+QString AgentSettingsStore::defaultEmbeddingBaseUrl()
+{
+    const QString configured = envString("REARK_EMBEDDING_BASE_URL");
+    return configured.isEmpty() ? QString::fromLatin1("https://api.openai.com") : configured;
+}
+
+QString AgentSettingsStore::defaultEmbeddingApiKey()
+{
+    const QString configured = envString("REARK_EMBEDDING_API_KEY");
+    if (!configured.isEmpty()) {
+        return configured;
+    }
+    return defaultApiKey();
+}
+
+QString AgentSettingsStore::defaultEmbeddingModel()
+{
+    const QString configured = envString("REARK_EMBEDDING_MODEL");
+    return configured.isEmpty() ? QString::fromLatin1(kDefaultEmbeddingModel) : configured;
+}
+
+bool AgentSettingsStore::defaultEmbeddingRequireApiKey(const QString& baseUrl)
+{
+    return !looksLocalEndpoint(baseUrl.isEmpty() ? defaultEmbeddingBaseUrl() : baseUrl.trimmed());
+}
+
+QString AgentSettingsStore::defaultTikaUrl()
+{
+    return envString("REARK_TIKA_URL");
 }

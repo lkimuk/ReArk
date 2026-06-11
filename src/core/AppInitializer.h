@@ -8,6 +8,7 @@
 class BuildInfoProvider;
 class ApplicationController;
 class AgentController;
+class AgentKnowledgeController;
 class DecompilerController;
 class LanguageController;
 class RecentFilesModel;
@@ -32,6 +33,7 @@ private:
     QQmlApplicationEngine& engine_;
     QString initialFileUrl_;
     ApplicationController* applicationController_ = nullptr;
+    AgentKnowledgeController* agentKnowledgeController_ = nullptr;
     AgentController* agentController_ = nullptr;
     BuildInfoProvider* buildInfoProvider_ = nullptr;
     ResourcePreviewProvider* resourcePreviewProvider_ = nullptr;

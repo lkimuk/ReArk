@@ -25,6 +25,7 @@ Rectangle {
     readonly property color dangerTextColor: darkTheme ? "#f48771" : "#a1260d"
 
     property bool showApiKey: false
+    property bool showEmbeddingApiKey: false
     property string searchQuery: ""
     property string saveMessage: ""
     readonly property string validationMessage: settingsController !== null
@@ -287,6 +288,80 @@ Rectangle {
                                 }
                             }
 
+                            SettingRow {
+                                id: embeddingBaseUrlRow
+
+                                title: qsTr("Agent: Embedding Base URL")
+                                description: qsTr("OpenAI-compatible embedding endpoint used to index reference knowledge.")
+
+                                SettingsTextField {
+                                    id: embeddingBaseUrlField
+                                    Layout.preferredWidth: 460
+                                }
+                            }
+
+                            SettingRow {
+                                id: embeddingModelRow
+
+                                title: qsTr("Agent: Embedding Model")
+                                description: qsTr("Embedding model used by the reference knowledge index.")
+
+                                SettingsTextField {
+                                    id: embeddingModelField
+                                    Layout.preferredWidth: 460
+                                }
+                            }
+
+                            SettingRow {
+                                id: embeddingApiKeyRow
+
+                                title: qsTr("Agent: Embedding API Key")
+                                description: qsTr("Leave empty for local embedding services that do not require authentication.")
+
+                                RowLayout {
+                                    spacing: 12
+
+                                    SettingsTextField {
+                                        id: embeddingApiKeyField
+                                        Layout.preferredWidth: 460
+                                        echoMode: root.showEmbeddingApiKey ? TextInput.Normal : TextInput.Password
+                                    }
+
+                                    CheckBox {
+                                        id: showEmbeddingApiKeyBox
+                                        text: qsTr("Show")
+                                        checked: root.showEmbeddingApiKey
+                                        onToggled: root.showEmbeddingApiKey = checked
+                                        font.pixelSize: 13
+                                    }
+                                }
+                            }
+
+                            SettingRow {
+                                id: embeddingRequireApiKeyRow
+
+                                title: qsTr("Agent: Embedding API Key Required")
+                                description: qsTr("Require an API key before indexing reference knowledge.")
+
+                                CheckBox {
+                                    id: embeddingRequireApiKeyBox
+                                    text: qsTr("Require embedding API key")
+                                    font.pixelSize: 13
+                                }
+                            }
+
+                            SettingRow {
+                                id: tikaUrlRow
+
+                                title: qsTr("Agent: Tika URL")
+                                description: qsTr("Optional Apache Tika server URL for PDF and Office reference documents.")
+
+                                SettingsTextField {
+                                    id: tikaUrlField
+                                    Layout.preferredWidth: 460
+                                }
+                            }
+
                             Rectangle {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 1
@@ -454,6 +529,11 @@ Rectangle {
         modelField.text = settingsController.agentModel
         apiKeyField.text = settingsController.agentApiKey
         requireApiKeyBox.checked = settingsController.agentRequireApiKey
+        embeddingBaseUrlField.text = settingsController.agentEmbeddingBaseUrl
+        embeddingModelField.text = settingsController.agentEmbeddingModel
+        embeddingApiKeyField.text = settingsController.agentEmbeddingApiKey
+        embeddingRequireApiKeyBox.checked = settingsController.agentEmbeddingRequireApiKey
+        tikaUrlField.text = settingsController.agentTikaUrl
         saveMessage = ""
     }
 
@@ -472,6 +552,11 @@ Rectangle {
             || modelRow.visible
             || apiKeyRow.visible
             || requireApiKeyRow.visible
+            || embeddingBaseUrlRow.visible
+            || embeddingModelRow.visible
+            || embeddingApiKeyRow.visible
+            || embeddingRequireApiKeyRow.visible
+            || tikaUrlRow.visible
     }
 
     function saveAgentSettings() {
@@ -483,7 +568,12 @@ Rectangle {
             baseUrlField.text,
             apiKeyField.text,
             modelField.text,
-            requireApiKeyBox.checked)
+            requireApiKeyBox.checked,
+            embeddingBaseUrlField.text,
+            embeddingApiKeyField.text,
+            embeddingModelField.text,
+            embeddingRequireApiKeyBox.checked,
+            tikaUrlField.text)
         saveMessage = saved ? qsTr("Agent settings saved.") : ""
         return saved
     }

@@ -137,6 +137,49 @@
     </message>
 </context>
 <context>
+    <name>AgentKnowledgeController</name>
+    <message>
+        <location filename="../../src/controller/AgentKnowledgeController.cpp" line="64"/>
+        <source>Loading</source>
+        <translation>正在加载</translation>
+    </message>
+    <message>
+        <location filename="../../src/controller/AgentKnowledgeController.cpp" line="67"/>
+        <source>Indexing</source>
+        <translation>正在索引</translation>
+    </message>
+    <message>
+        <location filename="../../src/controller/AgentKnowledgeController.cpp" line="70"/>
+        <source>Ready</source>
+        <translation>就绪</translation>
+    </message>
+    <message>
+        <location filename="../../src/controller/AgentKnowledgeController.cpp" line="73"/>
+        <source>Failed</source>
+        <translation>失败</translation>
+    </message>
+    <message>
+        <location filename="../../src/controller/AgentKnowledgeController.cpp" line="76"/>
+        <source>Cancelled</source>
+        <translation>已取消</translation>
+    </message>
+    <message>
+        <location filename="../../src/controller/AgentKnowledgeController.cpp" line="78"/>
+        <source>Pending</source>
+        <translation>等待中</translation>
+    </message>
+    <message>
+        <location filename="../../src/controller/AgentKnowledgeController.cpp" line="85"/>
+        <source>Embedding request timed out. Check the Embedding Base URL, API key, model, and network.</source>
+        <translation>嵌入请求超时。请检查 Embedding Base URL、API Key、模型和网络。</translation>
+    </message>
+    <message>
+        <location filename="../../src/controller/AgentKnowledgeController.cpp" line="89"/>
+        <source>Embedding request failed. Check the Embedding Base URL, API key, and model.</source>
+        <translation>嵌入请求失败。请检查 Embedding Base URL、API Key 和模型。</translation>
+    </message>
+</context>
+<context>
     <name>AgentSettings</name>
     <message>
         <location filename="../../src/controller/AgentSettings.cpp" line="177"/>
@@ -1007,6 +1050,66 @@
         <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="267"/>
         <source>Cancel</source>
         <translation>取消</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="517"/>
+        <source>Add reference knowledge</source>
+        <translation>添加参考知识</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="555"/>
+        <source>Reference indexing failed. Check settings.</source>
+        <translation>参考知识索引失败，请检查设置。</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="568"/>
+        <source>Wait for reference indexing to finish</source>
+        <translation>请等待参考知识索引完成</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="597"/>
+        <source>Add Reference File...</source>
+        <translation>添加参考文件...</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="602"/>
+        <source>Add Reference Folder...</source>
+        <translation>添加参考文件夹...</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="607"/>
+        <source>Add Web Page...</source>
+        <translation>添加网页...</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="614"/>
+        <source>Clear References</source>
+        <translation>清空参考知识</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="627"/>
+        <source>Add Reference File</source>
+        <translation>添加参考文件</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="630"/>
+        <source>Reference documents (*.md *.markdown *.txt *.html *.htm *.rtf *.csv *.json *.pdf *.docx *.pptx *.xlsx)</source>
+        <translation>参考文档 (*.md *.markdown *.txt *.html *.htm *.rtf *.csv *.json *.pdf *.docx *.pptx *.xlsx)</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="631"/>
+        <source>All files (*)</source>
+        <translation>所有文件 (*)</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="642"/>
+        <source>Add Reference Folder</source>
+        <translation>添加参考文件夹</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="655"/>
+        <source>Add Web Page</source>
+        <translation>添加网页</translation>
     </message>
 </context>
 <context>

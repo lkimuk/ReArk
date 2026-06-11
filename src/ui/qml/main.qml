@@ -102,6 +102,7 @@ ApplicationWindow {
                 anchors.fill: parent
                 visible: mainWindow.activeView === "smartAnalysis"
                 agentController: rearkAgentController
+                agentKnowledgeController: rearkAgentKnowledgeController
             }
         }
     }
