@@ -18,12 +18,37 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <thread>
 #include <system_error>
 #include <utility>
 
 namespace {
+
+struct LinkedStopToken {
+    std::stop_source source;
+    std::stop_callback<std::function<void()>> sessionCallback;
+    std::stop_callback<std::function<void()>> callerCallback;
+
+    LinkedStopToken(std::stop_token sessionStopToken, std::stop_token callerStopToken)
+        : sessionCallback(sessionStopToken, [this] {
+            source.request_stop();
+        })
+        , callerCallback(callerStopToken, [this] {
+            source.request_stop();
+        })
+    {
+        if (sessionStopToken.stop_requested() || callerStopToken.stop_requested()) {
+            source.request_stop();
+        }
+    }
+
+    [[nodiscard]] std::stop_token token() const noexcept
+    {
+        return source.get_token();
+    }
+};
 
 QString fromUtf8(const std::string& value)
 {
@@ -716,7 +741,8 @@ SourceResult readResourceContent(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     std::size_t hyleId,
-    const QString& name)
+    const QString& name,
+    std::stop_token stopToken)
 {
     PerformanceTrace trace(QStringLiteral("HyleDecompiler::readResourceContent"));
 
@@ -729,11 +755,12 @@ SourceResult readResourceContent(
         return result;
     }
 
+    LinkedStopToken linkedStop(context->stopToken(), stopToken);
     auto content = hyle::async::sync_wait(
         context->session.read_resource_async(
             context->scheduler(),
             hyleId,
-            context->stopToken()));
+            linkedStop.token()));
     if (!content) {
         result.error = errorMessage("Read resource failed", content.error());
         return result;
@@ -782,7 +809,8 @@ SourceResult readSignatureContent(
 SourceResult readSummaryContent(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
-    const QString& name)
+    const QString& name,
+    std::stop_token stopToken)
 {
     PerformanceTrace trace(QStringLiteral("HyleDecompiler::readSummaryContent"));
 
@@ -797,6 +825,11 @@ SourceResult readSummaryContent(
         return result;
     }
 
+    if (stopToken.stop_requested() || context->stopToken().stop_requested()) {
+        result.error = QObject::tr("Operation cancelled.");
+        return result;
+    }
+
     result.content = inspectSummaryFile(*context).content;
     return result;
 }
@@ -805,7 +838,8 @@ SourceResult decompileSourceFile(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     std::size_t hyleId,
-    const QString& name)
+    const QString& name,
+    std::stop_token stopToken)
 {
     PerformanceTrace trace(QStringLiteral("HyleDecompiler::decompileSourceFile"));
 
@@ -818,12 +852,13 @@ SourceResult decompileSourceFile(
         return result;
     }
 
+    LinkedStopToken linkedStop(context->stopToken(), stopToken);
     auto package = hyle::async::sync_wait(
         context->session.decompile_source_file_async(
             context->scheduler(),
             hyleId,
             {},
-            context->stopToken()));
+            linkedStop.token()));
     if (!package) {
         result.error = errorMessage("Decompile failed", package.error());
         return result;
@@ -951,7 +986,8 @@ DisassemblyResult disassembleSourceFileText(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     std::size_t sourceFileId,
-    const QString& name)
+    const QString& name,
+    std::stop_token stopToken)
 {
     PerformanceTrace trace(QStringLiteral("HyleDecompiler::disassembleSourceFileText"));
 
@@ -964,12 +1000,13 @@ DisassemblyResult disassembleSourceFileText(
         return result;
     }
 
+    LinkedStopToken linkedStop(context->stopToken(), stopToken);
     auto text = hyle::async::sync_wait(
         context->session.disassemble_source_file_text_async(
             context->scheduler(),
             sourceFileId,
             {},
-            context->stopToken()));
+            linkedStop.token()));
     if (!text) {
         result.error = errorMessage("Disassemble failed", text.error());
         return result;

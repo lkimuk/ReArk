@@ -2,8 +2,10 @@
 
 #ifdef REARK_HAS_WUWE
 #include <wuwe/agent/llm/llm_agent_runner.h>
-#include <wuwe/agent/llm/llm_error.h>
-#include <wuwe/agent/llm/openrouter_llm_client.h>
+#include <wuwe/agent/llm/llm_client.h>
+#include <wuwe/agent/llm/llm_config.h>
+#include <wuwe/agent/llm/llm_provider_factory.h>
+#include <wuwe/agent/llm/llm_provider_registry.h>
 #include <wuwe/agent/tools/tool.hpp>
 #if __has_include(<wuwe/agent/reasoning/reasoning.hpp>)
 #include <wuwe/agent/reasoning/reasoning.hpp>
@@ -14,6 +16,7 @@
 #include "controller/AgentSettings.h"
 #include "controller/AgentKnowledgeController.h"
 #include "controller/DecompilerController.h"
+#include "model/AgentMessageModel.h"
 
 #include <QClipboard>
 #include <QGuiApplication>
@@ -26,13 +29,43 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <chrono>
+#include <exception>
 #include <functional>
+#include <stdexcept>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 
 namespace {
 
 #ifdef REARK_HAS_WUWE
+
+QString toolRoundBudgetExceededMessage()
+{
+    return AgentController::tr("Agent tool call rounds were exhausted before a final answer was produced.");
+}
+
+bool isToolRoundBudgetExceededText(const QString& value)
+{
+    const QString folded = value.trimmed().toCaseFolded();
+    if (folded.isEmpty()) {
+        return false;
+    }
+
+    return folded.contains(QStringLiteral("tool_round_budget_exceeded"))
+        || folded.contains(QStringLiteral("agent_loop_budget_exceeded"))
+        || folded.contains(QStringLiteral("tool round budget exceeded"))
+        || folded.contains(QStringLiteral("agent tool round budget exceeded"))
+        || (folded.contains(QStringLiteral("tool"))
+            && folded.contains(QStringLiteral("round"))
+            && folded.contains(QStringLiteral("budget")));
+}
+
+bool isLegacyToolRoundBudgetError(std::error_code ec)
+{
+    return ec == std::make_error_code(std::errc::resource_unavailable_try_again);
+}
 
 std::string toStdString(const QString& value)
 {
@@ -43,6 +76,32 @@ std::string toStdString(const QString& value)
 QString fromStringView(std::string_view value)
 {
     return QString::fromUtf8(value.data(), qsizetype(value.size()));
+}
+
+std::shared_ptr<wuwe::llm_client> createLlmClient(const AgentSettings& settings)
+{
+    const QString provider = settings.provider.trimmed();
+    const std::string providerId = toStdString(provider);
+    wuwe::llm_client_config config {
+        .base_url = toStdString(settings.baseUrl),
+        .api_key = toStdString(settings.apiKey),
+        .require_api_key = settings.requireApiKey,
+        .model = toStdString(settings.model),
+        .timeout = 30000,
+        .referer_url = "https://www.cppmore.com/",
+        .app_title = "ReArk"
+    };
+
+    auto normalized = wuwe::normalize_llm_client_config(providerId, std::move(config));
+    if (!normalized) {
+        throw std::invalid_argument("unknown Wuwe LLM provider: " + providerId);
+    }
+
+    auto client = wuwe::make_llm_client(providerId, std::move(*normalized));
+    if (!client) {
+        throw std::invalid_argument("failed to create Wuwe LLM provider: " + providerId);
+    }
+    return client;
 }
 
 struct ReArkToolContext {
@@ -100,6 +159,63 @@ QString fileSearchText(const DecompilerController::AgentFileSnapshot& file)
         + file.contentMode + QLatin1Char('\n')
         + file.content + QLatin1Char('\n')
         + file.disassembly;
+}
+
+QString normalizedLookupText(QString value)
+{
+    value = value.trimmed();
+    while ((value.startsWith(QLatin1Char('"')) && value.endsWith(QLatin1Char('"')))
+        || (value.startsWith(QLatin1Char('\'')) && value.endsWith(QLatin1Char('\'')))
+        || (value.startsWith(QLatin1Char('`')) && value.endsWith(QLatin1Char('`')))) {
+        value = value.mid(1, value.size() - 2).trimmed();
+    }
+    value.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    while (value.startsWith(QStringLiteral("./"))) {
+        value = value.mid(2);
+    }
+    while (value.startsWith(QLatin1Char('/'))) {
+        value = value.mid(1);
+    }
+    return value.toCaseFolded();
+}
+
+int snapshotFileScore(const DecompilerController::AgentFileSnapshot& file, const QString& query)
+{
+    const QString foldedQuery = normalizedLookupText(query);
+    if (foldedQuery.isEmpty()) {
+        return 10;
+    }
+
+    const QString foldedPath = normalizedLookupText(file.path);
+    const QString foldedName = normalizedLookupText(file.name);
+    int score = -1;
+    if (foldedPath == foldedQuery || foldedName == foldedQuery) {
+        score = 1000;
+    } else if (foldedPath.endsWith(QLatin1Char('/') + foldedQuery)) {
+        score = 850;
+    } else if (foldedPath.endsWith(foldedQuery)) {
+        score = 760;
+    } else if (foldedName.contains(foldedQuery)) {
+        score = 620;
+    } else if (foldedPath.contains(foldedQuery)) {
+        score = 500;
+    } else if (matchesQuery(fileSearchText(file), query)) {
+        score = 100;
+    }
+
+    if (score < 0) {
+        return score;
+    }
+    if (file.loaded) {
+        score += 20;
+    }
+    if (file.hasDisassembly) {
+        score += 12;
+    }
+    if (file.disassemblyLoaded) {
+        score += 12;
+    }
+    return score;
 }
 
 QString formatSnapshotFileLine(const DecompilerController::AgentFileSnapshot& file)
@@ -209,29 +325,11 @@ const DecompilerController::AgentFileSnapshot* bestSnapshotFile(
     const DecompilerController::AgentSnapshot& snapshot,
     const QString& query)
 {
-    const QString foldedQuery = query.trimmed().toCaseFolded();
     const DecompilerController::AgentFileSnapshot* best = nullptr;
     int bestScore = -1;
 
     for (const auto& file : snapshot.files) {
-        if (!matchesQuery(fileSearchText(file), query)) {
-            continue;
-        }
-
-        const QString foldedPath = file.path.toCaseFolded();
-        const QString foldedName = file.name.toCaseFolded();
-        int score = 10;
-        if (!foldedQuery.isEmpty()) {
-            if (foldedPath == foldedQuery || foldedName == foldedQuery) {
-                score += 1000;
-            } else if (foldedPath.endsWith(QLatin1Char('/') + foldedQuery)) {
-                score += 700;
-            } else if (foldedName.contains(foldedQuery)) {
-                score += 500;
-            } else if (foldedPath.contains(foldedQuery)) {
-                score += 250;
-            }
-        }
+        const int score = snapshotFileScore(file, query);
         if (score > bestScore) {
             best = &file;
             bestScore = score;
@@ -241,39 +339,209 @@ const DecompilerController::AgentFileSnapshot* bestSnapshotFile(
     return best;
 }
 
-QString readSnapshotSource(const DecompilerController::AgentSnapshot& snapshot, const QString& query, int maxChars)
+QString snapshotFileCandidates(const DecompilerController::AgentSnapshot& snapshot, const QString& query, int limit = 8)
+{
+    struct Candidate {
+        const DecompilerController::AgentFileSnapshot* file = nullptr;
+        int score = -1;
+    };
+
+    QVector<Candidate> candidates;
+    candidates.reserve(snapshot.files.size());
+    for (const auto& file : snapshot.files) {
+        const int score = snapshotFileScore(file, query);
+        if (score < 0) {
+            continue;
+        }
+        candidates.push_back({ &file, score });
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate& lhs, const Candidate& rhs) {
+        return lhs.score > rhs.score;
+    });
+
+    QString result;
+    const int count = std::min(limit, static_cast<int>(candidates.size()));
+    for (int i = 0; i < count; ++i) {
+        result += QStringLiteral("- %1\n").arg(formatSnapshotFileLine(*candidates.at(i).file));
+    }
+    return result;
+}
+
+QString readSnapshotSource(
+    const DecompilerController::AgentSnapshot& snapshot,
+    const QString& query,
+    int maxChars,
+    std::stop_token stopToken)
 {
     const auto* file = bestSnapshotFile(snapshot, query);
     if (file == nullptr) {
-        return QStringLiteral("No source or resource file matched the Agent snapshot query: %1").arg(query);
+        return QStringLiteral(
+            "# status: error\n"
+            "# code: file_not_found\n"
+            "# query: %1\n"
+            "# message: No source or resource file matched the query.\n"
+            "Try list_files first to inspect available paths.").arg(query);
     }
-    if (!file->loaded || file->content.isEmpty()) {
-        return QStringLiteral("Matched file is not loaded in the Agent snapshot: %1").arg(file->path);
+
+    if (file->loaded && !file->content.isEmpty()) {
+        QString text;
+        text += QStringLiteral("# status: ok\n");
+        text += QStringLiteral("# file: %1\n").arg(file->path);
+        text += QStringLiteral("# kind: %1\n").arg(file->kind);
+        text += QStringLiteral("# section: %1\n").arg(file->section);
+        text += QStringLiteral("# content_mode: %1\n\n").arg(file->contentMode);
+        text += file->content;
+        return boundedSnapshotText(text, maxChars);
+    }
+
+    if (!snapshot.packageContext) {
+        QString message = QStringLiteral(
+            "# status: error\n"
+            "# code: no_active_session\n"
+            "# matched file: %1\n"
+            "# reason: no active Hyle session is available for on-demand Agent reads.\n"
+            "Closest candidates:\n%2")
+            .arg(file->path, snapshotFileCandidates(snapshot, query));
+        return boundedSnapshotText(message, maxChars);
+    }
+
+    HyleDecompiler::SourceResult result;
+    if (file->section == QStringLiteral("resource")) {
+        result = HyleDecompiler::readResourceContent(
+            snapshot.packageContext,
+            -1,
+            file->hyleId,
+            file->name,
+            stopToken);
+    } else if (file->section == QStringLiteral("signature")) {
+        result = HyleDecompiler::readSignatureContent(
+            snapshot.packagePath,
+            -1,
+            file->name);
+    } else if (file->section == QStringLiteral("summary")) {
+        result = HyleDecompiler::readSummaryContent(
+            snapshot.packageContext,
+            -1,
+            file->name,
+            stopToken);
+    } else {
+        result = HyleDecompiler::decompileSourceFile(
+            snapshot.packageContext,
+            -1,
+            file->hyleId,
+            file->name,
+            stopToken);
+    }
+
+    if (!result.error.isEmpty()) {
+        QString message = QStringLiteral(
+            "# status: error\n"
+            "# code: source_read_failed\n"
+            "# matched file: %1\n"
+            "# error: %2\n"
+            "Closest candidates:\n%3")
+            .arg(file->path, result.error, snapshotFileCandidates(snapshot, query));
+        return boundedSnapshotText(message, maxChars);
     }
 
     QString text;
+    text += QStringLiteral("# status: ok\n");
     text += QStringLiteral("# file: %1\n").arg(file->path);
-    text += QStringLiteral("# kind: %1\n\n").arg(file->kind);
-    text += file->content;
+    text += QStringLiteral("# kind: %1\n").arg(result.kind.isEmpty() ? file->kind : result.kind);
+    text += QStringLiteral("# section: %1\n").arg(file->section);
+    text += QStringLiteral("# content_mode: %1\n").arg(result.contentMode.isEmpty() ? file->contentMode : result.contentMode);
+    if (!result.binaryContent.isEmpty()) {
+        text += QStringLiteral("# binary_size: %1 bytes\n").arg(result.binaryContent.size());
+    }
+    if (!result.diagnostics.isEmpty()) {
+        text += QStringLiteral("# diagnostics:\n%1\n").arg(result.diagnostics);
+    }
+    text += QStringLiteral("\n");
+    if (!result.content.isEmpty()) {
+        text += result.content;
+    } else {
+        text += QStringLiteral(
+            "[non-text content is available to ReArk, but this Agent tool returns text. "
+            "Use list_files to inspect metadata or ask for resources by path.]");
+    }
     return boundedSnapshotText(text, maxChars);
 }
 
-QString readSnapshotDisassembly(const DecompilerController::AgentSnapshot& snapshot, const QString& query, int maxChars)
+QString readSnapshotDisassembly(
+    const DecompilerController::AgentSnapshot& snapshot,
+    const QString& query,
+    int maxChars,
+    std::stop_token stopToken)
 {
     const auto* file = bestSnapshotFile(snapshot, query);
     if (file == nullptr) {
-        return QStringLiteral("No source file matched the Agent snapshot query: %1").arg(query);
+        return QStringLiteral(
+            "# status: error\n"
+            "# code: file_not_found\n"
+            "# query: %1\n"
+            "# message: No source file matched the query.\n"
+            "Try list_files first to inspect available source paths.").arg(query);
     }
     if (!file->hasDisassembly) {
-        return QStringLiteral("Matched file does not have source-file disassembly: %1").arg(file->path);
+        QString text = QStringLiteral(
+            "# status: error\n"
+            "# code: disassembly_unsupported\n"
+            "# matched file: %1\n"
+            "# reason: this file has no source-file disassembly in the current ReArk snapshot.\n")
+            .arg(file->path);
+        if (file->loaded && !file->content.isEmpty()) {
+            text += QStringLiteral("\n# loaded source fallback\n\n");
+            text += file->content;
+        } else {
+            text += QStringLiteral("\nClosest candidates:\n%1").arg(snapshotFileCandidates(snapshot, query));
+        }
+        return boundedSnapshotText(text, maxChars);
     }
-    if (!file->disassemblyLoaded || file->disassembly.isEmpty()) {
-        return QStringLiteral("Disassembly is not loaded in the Agent snapshot for: %1").arg(file->path);
+    if (file->disassemblyLoaded && !file->disassembly.isEmpty()) {
+        QString text;
+        text += QStringLiteral("# status: ok\n");
+        text += QStringLiteral("# disassembly: %1\n\n").arg(file->path);
+        text += file->disassembly;
+        return boundedSnapshotText(text, maxChars);
+    }
+
+    if (!snapshot.packageContext) {
+        QString text = QStringLiteral(
+            "# status: error\n"
+            "# code: no_active_session\n"
+            "# matched file: %1\n"
+            "# reason: no active Hyle session is available for on-demand Agent disassembly.\n"
+            "Closest candidates:\n%2")
+            .arg(file->path, snapshotFileCandidates(snapshot, query));
+        return boundedSnapshotText(text, maxChars);
+    }
+
+    const auto result = HyleDecompiler::disassembleSourceFileText(
+        snapshot.packageContext,
+        -1,
+        file->hyleId,
+        file->name,
+        stopToken);
+    if (!result.error.isEmpty()) {
+        QString text = QStringLiteral(
+            "# status: error\n"
+            "# code: disassembly_read_failed\n"
+            "# matched file: %1\n"
+            "# error: %2\n")
+            .arg(file->path, result.error);
+        if (file->loaded && !file->content.isEmpty()) {
+            text += QStringLiteral("\n# loaded source fallback\n\n");
+            text += file->content;
+        } else {
+            text += QStringLiteral("\nClosest candidates:\n%1").arg(snapshotFileCandidates(snapshot, query));
+        }
+        return boundedSnapshotText(text, maxChars);
     }
 
     QString text;
+    text += QStringLiteral("# status: ok\n");
     text += QStringLiteral("# disassembly: %1\n\n").arg(file->path);
-    text += file->disassembly;
+    text += result.content;
     return boundedSnapshotText(text, maxChars);
 }
 
@@ -367,7 +635,7 @@ struct search_loaded_content {
 
 struct read_source {
     static constexpr std::string_view description =
-        "Read a loaded source, resource text, summary, or descriptor file from the current ReArk target.";
+        "Read a source file, resource text, summary, or descriptor file from the current ReArk target. ReArk may load it on demand from the active Hyle session.";
 
     wuwe::field<std::string> path_or_query {
         .description = "Exact path or search query for the file to read."
@@ -389,14 +657,15 @@ struct read_source {
             .content = toStdString(readSnapshotSource(
                 *context.snapshot,
                 QString::fromStdString(path_or_query.value),
-                max_chars.value))
+                max_chars.value,
+                context.stopToken))
         };
     }
 };
 
 struct read_disassembly {
     static constexpr std::string_view description =
-        "Read already loaded source-file disassembly for a source file in the current ReArk target.";
+        "Read source-file disassembly for a source file in the current ReArk target. ReArk may disassemble it on demand from the active Hyle session.";
 
     wuwe::field<std::string> path_or_query {
         .description = "Exact source path or search query for the file disassembly to read."
@@ -418,7 +687,8 @@ struct read_disassembly {
             .content = toStdString(readSnapshotDisassembly(
                 *context.snapshot,
                 QString::fromStdString(path_or_query.value),
-                max_chars.value))
+                max_chars.value,
+                context.stopToken))
         };
     }
 };
@@ -525,6 +795,11 @@ private:
 
 QString agentErrorMessage(std::error_code ec, const QString& message)
 {
+    if (isToolRoundBudgetExceededText(message)
+        || isToolRoundBudgetExceededText(QString::fromStdString(ec.message()))
+        || isLegacyToolRoundBudgetError(ec)) {
+        return toolRoundBudgetExceededMessage();
+    }
     if (ec == wuwe::agent::llm_error_code::missing_api_key) {
         return AgentController::tr("Missing API key. Configure Agent settings or set REARK_LLM_API_KEY / OPENROUTER_API_KEY.");
     }
@@ -618,13 +893,55 @@ QString dumpReasoningJson(const nlohmann::json& value)
 
 QString reasoningErrorToJson(const wuwe::agent::reasoning::reasoning_error& error)
 {
+    const QString code = QString::fromUtf8(wuwe::agent::reasoning::to_string(error.code));
+    const QString message = QString::fromStdString(error.message);
     nlohmann::json value {
         { "completed", false },
         { "reasoning_error", wuwe::agent::reasoning::to_string(error.code) },
         { "underlying_error", error.underlying_error ? error.underlying_error.message() : "" },
         { "message", error.message }
     };
+    if (isToolRoundBudgetExceededText(code) || isToolRoundBudgetExceededText(message)) {
+        value["stop_reason"] = "tool_round_budget_exceeded";
+    }
     return dumpReasoningJson(value);
+}
+
+QString reasoningErrorMessage(const wuwe::agent::reasoning::reasoning_error& error)
+{
+    const QString code = QString::fromUtf8(wuwe::agent::reasoning::to_string(error.code));
+    const QString message = QString::fromStdString(error.message);
+    const QString underlying = error.underlying_error
+        ? QString::fromStdString(error.underlying_error.message())
+        : QString();
+
+    if (isToolRoundBudgetExceededText(code)
+        || isToolRoundBudgetExceededText(message)
+        || isToolRoundBudgetExceededText(underlying)
+        || (error.underlying_error && isLegacyToolRoundBudgetError(error.underlying_error))) {
+        return toolRoundBudgetExceededMessage();
+    }
+
+    return error.underlying_error
+        ? agentErrorMessage(error.underlying_error, message)
+        : message;
+}
+
+wuwe::agent::reasoning::reasoning_policy rearkReasoningPolicy(const std::string& input)
+{
+    namespace reasoning = wuwe::agent::reasoning;
+
+    auto policy = reasoning::select_policy(reasoning::reasoning_task_description {
+        .input = input,
+        .has_tools = true,
+        .requires_tools = false
+    });
+    policy.budget.max_model_calls = 12;
+    policy.budget.max_tool_calls = 36;
+    policy.budget.max_tool_rounds = 10;
+    policy.budget.max_steps = 10;
+    policy.budget.timeout = std::chrono::milliseconds { 180000 };
+    return policy;
 }
 #endif
 
@@ -634,7 +951,7 @@ QString reasoningErrorToJson(const wuwe::agent::reasoning::reasoning_error& erro
 
 struct AgentController::Runtime {
 #ifdef REARK_HAS_WUWE
-    std::unique_ptr<wuwe::openrouter_llm_client> client;
+    std::shared_ptr<wuwe::llm_client> client;
     std::shared_ptr<ReArkToolProvider> rearkProvider;
     std::shared_ptr<AgentKnowledgeController::KnowledgeToolProviderHandle> knowledgeProvider;
     std::shared_ptr<wuwe::composite_tool_provider> provider;
@@ -656,6 +973,7 @@ AgentController::AgentController(
     , decompilerController_(decompilerController)
     , knowledgeController_(knowledgeController)
     , runtime_(std::make_unique<Runtime>())
+    , messageModel_(new AgentMessageModel(this))
     , assistantDeltaTimer_(new QTimer(this))
 {
     assistantDeltaTimer_->setSingleShot(true);
@@ -691,6 +1009,11 @@ QString AgentController::transcript() const
 QVariantList AgentController::messages() const
 {
     return messages_;
+}
+
+QAbstractItemModel* AgentController::messageModel() const
+{
+    return messageModel_;
 }
 
 bool AgentController::hasMessages() const
@@ -770,15 +1093,18 @@ void AgentController::ask(const QString& question)
             ? decompilerController_->agentSnapshot()
             : DecompilerController::AgentSnapshot {});
 
-    runtime_->client = std::make_unique<wuwe::openrouter_llm_client>(wuwe::llm_client_config {
-        .base_url = toStdString(settings.baseUrl),
-        .api_key = toStdString(settings.apiKey),
-        .require_api_key = settings.requireApiKey,
-        .model = toStdString(settings.model),
-        .timeout = 30000,
-        .referer_url = "https://www.cppmore.com/",
-        .app_title = "ReArk"
-    });
+    try {
+        runtime_->client = createLlmClient(settings);
+    } catch (const std::exception& ex) {
+        const QString message = tr("Failed to create Wuwe LLM provider %1: %2")
+            .arg(settings.provider, QString::fromUtf8(ex.what()));
+        appendMessage(QStringLiteral("user"), trimmed);
+        appendMessage(QStringLiteral("assistant"), message, QStringLiteral("error"));
+        setErrorMessage(message);
+        setStatus(message);
+        resetRun();
+        return;
+    }
     runtime_->rearkProvider = std::make_shared<ReArkToolProvider>(snapshot);
     runtime_->knowledgeProvider = knowledgeController_ != nullptr
         ? knowledgeController_->createKnowledgeToolProvider()
@@ -795,10 +1121,16 @@ void AgentController::ask(const QString& question)
 
     QString systemPrompt =
         QStringLiteral("You are an expert HarmonyOS NEXT application reverse engineering assistant embedded in ReArk. "
-            "Use ReArk tools whenever you need package, source, disassembly, resource, signature, or entry-point data. "
+            "Use ReArk tools when you need package, source, disassembly, resource, signature, or entry-point data, "
+            "but do not keep calling tools after you have enough evidence to answer. "
+            "For overview questions such as app purpose, features, entry points, pages, permissions, or architecture, "
+            "first use the current snapshot, important files, and entry-point list below, then call only the tools that are truly needed. "
+            "If a tool reports that a file is unavailable, unsupported, or not matched, do not retry the same unavailable path repeatedly; "
+            "answer from the available evidence and clearly state what could not be read. "
+            "Always produce a useful final answer, even if some optional evidence is missing. "
             "When user-provided reference documents are attached, use search_knowledge for external "
             "HarmonyOS, reverse engineering, security, or app analysis knowledge before giving detailed conclusions. "
-            "Be concise, evidence-based, and mention when requested data is not loaded yet.");
+            "Be concise, evidence-based, and mention when requested data is unavailable through the tools.");
     if (knowledgeController_ != nullptr && knowledgeController_->hasReadyReferences()) {
         systemPrompt += QStringLiteral(
             "\n\nAttached reference documents for this chat:\n%1"
@@ -809,6 +1141,12 @@ void AgentController::ask(const QString& question)
     }
     systemPrompt += QStringLiteral("\n\nCurrent ReArk snapshot:\n%1")
         .arg(snapshot->packageSummary.isEmpty() ? QStringLiteral("<none>") : snapshot->packageSummary);
+    systemPrompt += QStringLiteral("\n\nCurrent important entry points:\n%1")
+        .arg(snapshot->entryPoints.isEmpty() ? QStringLiteral("<none>") : snapshot->entryPoints);
+    systemPrompt += QStringLiteral("\n\nCurrent file index excerpt:\n%1")
+        .arg(snapshot->fileList.isEmpty()
+                ? QStringLiteral("<none>")
+                : boundedSnapshotText(snapshot->fileList, 12000));
 
     QPointer<AgentController> self(this);
 
@@ -849,11 +1187,7 @@ void AgentController::ask(const QString& question)
     request.system_prompt = toStdString(systemPrompt);
     request.model = toStdString(settings.model);
     request.temperature = 0.2;
-    request.policy = reasoning::select_policy(reasoning::reasoning_task_description {
-        .input = request.input,
-        .has_tools = true,
-        .requires_tools = true
-    });
+    request.policy = rearkReasoningPolicy(request.input);
     request.metadata.emplace("host", "ReArk");
     request.metadata.emplace("target_summary", toStdString(boundedSnapshotText(snapshot->packageSummary, 2000)));
 
@@ -895,9 +1229,7 @@ void AgentController::ask(const QString& question)
         if (!self) {
             return;
         }
-        QString message = error.underlying_error
-            ? agentErrorMessage(error.underlying_error, QString::fromStdString(error.message))
-            : QString::fromStdString(error.message);
+        QString message = reasoningErrorMessage(error);
         if (message.isEmpty()) {
             message = AgentController::tr("Analysis failed.");
         }
@@ -908,9 +1240,7 @@ void AgentController::ask(const QString& question)
             }
             self->setReasoningDetails(resultJson, {}, {});
             self->setErrorMessage(message);
-            self->flushPendingAssistantDelta();
-            self->appendToActiveAssistantMessage(message);
-            self->finishActiveAssistantMessage();
+            self->failActiveAssistantMessage();
             self->setRunning(false);
             self->setStatus(message);
             self->resetRun();
@@ -942,7 +1272,8 @@ void AgentController::ask(const QString& question)
 #else
     runtime_->runner = std::make_unique<wuwe::llm_agent_runner>(
         *runtime_->client,
-        runtime_->provider);
+        runtime_->provider,
+        10);
 
     wuwe::llm_request request;
     request.model = toStdString(settings.model);
@@ -1026,9 +1357,7 @@ void AgentController::ask(const QString& question)
             QMetaObject::invokeMethod(self.data(), [self, msg] {
                 if (self) {
                     self->setErrorMessage(msg);
-                    self->flushPendingAssistantDelta();
-                    self->appendToActiveAssistantMessage(msg);
-                    self->finishActiveAssistantMessage();
+                    self->failActiveAssistantMessage();
                     self->setStatus(msg);
                     self->setRunning(false);
                     self->resetRun();
@@ -1139,6 +1468,9 @@ void AgentController::clearMessages()
     }
     pendingAssistantDelta_.clear();
     messages_.clear();
+    if (messageModel_ != nullptr) {
+        messageModel_->clear();
+    }
     activeAssistantMessage_ = -1;
     emit messagesChanged();
     setTranscript({});
@@ -1151,12 +1483,16 @@ void AgentController::clearReasoningDetails()
 
 void AgentController::appendMessage(const QString& role, const QString& text, const QString& state)
 {
+    const QString time = QTime::currentTime().toString(QStringLiteral("h:mm AP"));
     QVariantMap message;
     message.insert(QStringLiteral("role"), role);
     message.insert(QStringLiteral("text"), text);
     message.insert(QStringLiteral("state"), state);
-    message.insert(QStringLiteral("time"), QTime::currentTime().toString(QStringLiteral("h:mm AP")));
+    message.insert(QStringLiteral("time"), time);
     messages_.append(message);
+    if (messageModel_ != nullptr) {
+        messageModel_->appendMessage(role, text, state, time);
+    }
     activeAssistantMessage_ = role == QStringLiteral("assistant")
         ? messages_.size() - 1
         : -1;
@@ -1206,7 +1542,9 @@ void AgentController::appendToActiveAssistantMessage(const QString& text)
         QStringLiteral("text"),
         message.value(QStringLiteral("text")).toString() + text);
     messages_[activeAssistantMessage_] = message;
-    emit messagesChanged();
+    if (messageModel_ != nullptr) {
+        messageModel_->appendText(activeAssistantMessage_, text);
+    }
 }
 
 void AgentController::finishActiveAssistantMessage(const QString& fallbackText)
@@ -1231,6 +1569,47 @@ void AgentController::finishActiveAssistantMessage(const QString& fallbackText)
     }
     message.insert(QStringLiteral("state"), QStringLiteral("done"));
     messages_[activeAssistantMessage_] = message;
+    if (messageModel_ != nullptr) {
+        messageModel_->finishStreaming(activeAssistantMessage_, fallbackText);
+    }
+    activeAssistantMessage_ = -1;
+    rebuildTranscript();
+}
+
+void AgentController::failActiveAssistantMessage()
+{
+    if (assistantDeltaTimer_ != nullptr) {
+        assistantDeltaTimer_->stop();
+    }
+    flushPendingAssistantDelta();
+
+    if (activeAssistantMessage_ < 0 || activeAssistantMessage_ >= messages_.size()) {
+        return;
+    }
+
+    QVariantMap message = messages_.at(activeAssistantMessage_).toMap();
+    if (message.value(QStringLiteral("state")).toString() != QStringLiteral("streaming")) {
+        activeAssistantMessage_ = -1;
+        return;
+    }
+
+    const bool emptyAssistantText = message.value(QStringLiteral("text")).toString().trimmed().isEmpty();
+    if (emptyAssistantText) {
+        messages_.removeAt(activeAssistantMessage_);
+        if (messageModel_ != nullptr) {
+            messageModel_->removeMessage(activeAssistantMessage_);
+        }
+        activeAssistantMessage_ = -1;
+        emit messagesChanged();
+        rebuildTranscript();
+        return;
+    }
+
+    message.insert(QStringLiteral("state"), QStringLiteral("error"));
+    messages_[activeAssistantMessage_] = message;
+    if (messageModel_ != nullptr) {
+        messageModel_->failStreaming(activeAssistantMessage_);
+    }
     activeAssistantMessage_ = -1;
     emit messagesChanged();
     rebuildTranscript();
@@ -1243,6 +1622,10 @@ void AgentController::rebuildTranscript()
         const QVariantMap message = item.toMap();
         const QString role = message.value(QStringLiteral("role")).toString();
         const QString content = message.value(QStringLiteral("text")).toString();
+        const QString state = message.value(QStringLiteral("state")).toString();
+        if (role == QStringLiteral("assistant") && state != QStringLiteral("done")) {
+            continue;
+        }
         if (!text.isEmpty()) {
             text += QStringLiteral("\n\n");
         }

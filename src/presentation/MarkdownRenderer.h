@@ -3,15 +3,8 @@
 
 #include <QObject>
 #include <QHash>
+#include <QVariantList>
 #include <QString>
-#include <QStringList>
-#include <QVector>
-
-struct MarkdownCodeBlock {
-    QString token;
-    QString language;
-    QString code;
-};
 
 class MarkdownRenderer : public QObject {
     Q_OBJECT
@@ -19,17 +12,18 @@ class MarkdownRenderer : public QObject {
 public:
     explicit MarkdownRenderer(QObject* parent = nullptr);
 
-    Q_INVOKABLE QString render(const QString& markdown, bool darkTheme) const;
+    Q_INVOKABLE QVariantList renderBlocks(const QString& markdown, bool darkTheme) const;
+    Q_INVOKABLE int renderBlocksAsync(const QString& markdown, bool darkTheme);
+
+signals:
+    void blocksReady(int requestId, const QVariantList& blocks);
 
 private:
-    [[nodiscard]] QString prepareMarkdown(const QString& markdown, QVector<MarkdownCodeBlock>* codeBlocks) const;
-    [[nodiscard]] QString renderCodeBlock(const MarkdownCodeBlock& block, bool darkTheme) const;
-    [[nodiscard]] QString highlightCode(const QString& code, const QString& language, bool darkTheme) const;
-    [[nodiscard]] QString styleSheet(bool darkTheme) const;
-    void rememberRenderedHtml(const QString& key, const QString& html) const;
+    void rememberRenderedBlocks(const QString& key, const QVariantList& blocks) const;
 
-    mutable QHash<QString, QString> cache_;
-    mutable QStringList cacheOrder_;
+    mutable QHash<QString, QVariantList> blockCache_;
+    mutable QStringList blockCacheOrder_;
+    int nextRequestId_ = 0;
 };
 
 #endif // REARK_MARKDOWN_RENDERER_H

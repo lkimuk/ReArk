@@ -521,6 +521,8 @@ DecompilerController::AgentSnapshot DecompilerController::agentSnapshot(
     snapshot.fileList = agentListFiles({}, maxFiles);
     snapshot.entryPoints = agentEntryPoints();
     snapshot.signatureSummary = agentSignatureSummary(maxContentChars);
+    snapshot.packagePath = packagePath_;
+    snapshot.packageContext = packageContext_;
 
     const QVariantList candidates = treeModel_.navigationCandidates({}, maxFiles <= 0 ? 500 : maxFiles);
     snapshot.files.reserve(candidates.size());
@@ -537,6 +539,7 @@ DecompilerController::AgentSnapshot DecompilerController::agentSnapshot(
         file.kind = treeModel_.nodeKind(nodeIndex);
         file.section = candidate.value(QStringLiteral("section")).toString();
         file.contentMode = treeModel_.nodeContentMode(nodeIndex);
+        file.hyleId = treeModel_.nodeHyleId(nodeIndex);
         file.loaded = !treeModel_.nodeNeedsLoad(nodeIndex);
         if (file.loaded) {
             file.content = boundedAgentText(treeModel_.nodeContent(nodeIndex), maxContentChars);

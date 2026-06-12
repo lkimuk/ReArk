@@ -1,6 +1,7 @@
 #ifndef REARK_AGENT_CONTROLLER_H
 #define REARK_AGENT_CONTROLLER_H
 
+#include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -9,6 +10,7 @@
 #include <optional>
 #include <stop_token>
 
+class AgentMessageModel;
 class DecompilerController;
 class AgentKnowledgeController;
 class QTimer;
@@ -19,6 +21,7 @@ class AgentController : public QObject {
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
     Q_PROPERTY(QString transcript READ transcript NOTIFY transcriptChanged)
     Q_PROPERTY(QVariantList messages READ messages NOTIFY messagesChanged)
+    Q_PROPERTY(QAbstractItemModel* messageModel READ messageModel CONSTANT)
     Q_PROPERTY(bool hasMessages READ hasMessages NOTIFY messagesChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
@@ -38,6 +41,7 @@ public:
     [[nodiscard]] bool running() const;
     [[nodiscard]] QString transcript() const;
     [[nodiscard]] QVariantList messages() const;
+    [[nodiscard]] QAbstractItemModel* messageModel() const;
     [[nodiscard]] bool hasMessages() const;
     [[nodiscard]] QString errorMessage() const;
     [[nodiscard]] QString status() const;
@@ -70,6 +74,7 @@ private:
     void flushPendingAssistantDelta();
     void appendToActiveAssistantMessage(const QString& text);
     void finishActiveAssistantMessage(const QString& fallbackText = {});
+    void failActiveAssistantMessage();
     void rebuildTranscript();
     void appendTranscript(const QString& text);
     void setErrorMessage(const QString& errorMessage);
@@ -84,6 +89,7 @@ private:
     std::unique_ptr<Runtime> runtime_;
     QString transcript_;
     QVariantList messages_;
+    AgentMessageModel* messageModel_ = nullptr;
     QString errorMessage_;
     QString status_;
     QString reasoningResultJson_;

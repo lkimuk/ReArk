@@ -28,6 +28,12 @@ Rectangle {
     property bool showEmbeddingApiKey: false
     property string searchQuery: ""
     property string saveMessage: ""
+    property string activeProviderDraftId: ""
+    property var providerDrafts: ({})
+    property bool loadingDraft: false
+    readonly property var providerOptions: settingsController !== null
+            ? settingsController.agentProviders
+            : []
     readonly property string validationMessage: settingsController !== null
             ? settingsController.agentValidationMessage
             : ""
@@ -129,6 +135,9 @@ Rectangle {
                             ListElement {
                                 title: "Agent"
                             }
+                            ListElement {
+                                title: "Knowledge"
+                            }
                         }
 
                         delegate: ItemDelegate {
@@ -154,7 +163,9 @@ Rectangle {
                                 leftPadding: 10
                                 rightPadding: 8
                                 verticalAlignment: Text.AlignVCenter
-                                text: navDelegate.title === "Agent" ? qsTr("Agent") : navDelegate.title
+                                text: navDelegate.title === "Agent"
+                                      ? qsTr("Agent")
+                                      : (navDelegate.title === "Knowledge" ? qsTr("Knowledge") : navDelegate.title)
                                 color: settingsNavigation.currentIndex === navDelegate.index
                                        ? root.titleTextColor
                                        : root.secondaryTextColor
@@ -216,17 +227,33 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Layout.topMargin: 8
                                 Layout.bottomMargin: 24
-                                text: qsTr("Configure the model endpoint used by ReArk smart analysis.")
+                                text: qsTr("Configure the model provider and endpoint used by ReArk smart analysis.")
                                 color: root.secondaryTextColor
                                 font.pixelSize: 13
                                 wrapMode: Text.WordWrap
                             }
 
                             SettingRow {
+                                id: providerRow
+
+                                title: qsTr("Agent: Provider")
+                                description: qsTr("Wuwe LLM provider preset or OpenAI-compatible endpoint.")
+
+                                SettingsComboBox {
+                                    id: providerField
+                                    Layout.preferredWidth: 260
+                                    model: root.providerOptions
+                                    textRole: "displayName"
+                                    valueRole: "id"
+                                    onActivated: root.switchProviderDraft(root.providerIdAt(currentIndex))
+                                }
+                            }
+
+                            SettingRow {
                                 id: baseUrlRow
 
                                 title: qsTr("Agent: Base URL")
-                                description: qsTr("OpenRouter, OpenAI-compatible, or local model service endpoint.")
+                                description: qsTr("Provider endpoint. Keep provider defaults here, or override for compatible gateways.")
 
                                 SettingsTextField {
                                     id: baseUrlField
@@ -288,10 +315,121 @@ Rectangle {
                                 }
                             }
 
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 1
+                                Layout.topMargin: 8
+                                visible: root.anyAgentSettingVisible()
+                                color: root.borderColor
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 12
+                                Layout.bottomMargin: 18
+                                visible: !root.anyAgentSettingVisible()
+                                text: qsTr("No settings found")
+                                color: root.secondaryTextColor
+                                font.pixelSize: 13
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 18
+                                spacing: 10
+                                visible: root.anyAgentSettingVisible()
+
+                                Button {
+                                    id: agentSaveButton
+
+                                    text: qsTr("Save")
+                                    hoverEnabled: true
+                                    onClicked: root.saveAgentSettings()
+                                    contentItem: Label {
+                                        text: agentSaveButton.text
+                                        color: "#ffffff"
+                                        font.pixelSize: 13
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    background: Rectangle {
+                                        radius: 2
+                                        color: agentSaveButton.hovered ? root.buttonHoverColor : root.buttonColor
+                                    }
+                                }
+
+                                Button {
+                                    text: qsTr("Reset")
+                                    flat: true
+                                    onClicked: {
+                                        if (root.settingsController !== null) {
+                                            root.settingsController.resetAgentRuntimeSettings()
+                                        }
+                                        root.loadDraft()
+                                        root.saveMessage = qsTr("Agent settings reset.")
+                                    }
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: root.validationMessage.length > 0 ? root.validationMessage : root.saveMessage
+                                    color: root.validationMessage.length > 0 ? root.dangerTextColor : root.subtleTextColor
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        ScrollBar.vertical: ScrollBar {
+                            id: agentScrollBar
+
+                            policy: ScrollBar.AsNeeded
+                        }
+                    }
+                }
+
+                Item {
+                    id: knowledgePage
+
+                    Flickable {
+                        id: knowledgeFlickable
+
+                        anchors.fill: parent
+                        clip: true
+                        contentWidth: width
+                        contentHeight: knowledgeContent.implicitHeight + 44
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        ColumnLayout {
+                            id: knowledgeContent
+
+                            width: Math.min(980, Math.max(560, knowledgeFlickable.width - knowledgeScrollBar.width - 72))
+                            x: 38
+                            y: 28
+                            spacing: 0
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: qsTr("Knowledge")
+                                color: root.titleTextColor
+                                font.pixelSize: 26
+                                font.weight: Font.DemiBold
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                Layout.bottomMargin: 24
+                                text: qsTr("Configure reference knowledge indexing for RAG-assisted analysis.")
+                                color: root.secondaryTextColor
+                                font.pixelSize: 13
+                                wrapMode: Text.WordWrap
+                            }
+
                             SettingRow {
                                 id: embeddingBaseUrlRow
 
-                                title: qsTr("Agent: Embedding Base URL")
+                                title: qsTr("Knowledge: Embedding Base URL")
                                 description: qsTr("OpenAI-compatible embedding endpoint used to index reference knowledge.")
 
                                 SettingsTextField {
@@ -303,7 +441,7 @@ Rectangle {
                             SettingRow {
                                 id: embeddingModelRow
 
-                                title: qsTr("Agent: Embedding Model")
+                                title: qsTr("Knowledge: Embedding Model")
                                 description: qsTr("Embedding model used by the reference knowledge index.")
 
                                 SettingsTextField {
@@ -315,7 +453,7 @@ Rectangle {
                             SettingRow {
                                 id: embeddingApiKeyRow
 
-                                title: qsTr("Agent: Embedding API Key")
+                                title: qsTr("Knowledge: Embedding API Key")
                                 description: qsTr("Leave empty for local embedding services that do not require authentication.")
 
                                 RowLayout {
@@ -340,7 +478,7 @@ Rectangle {
                             SettingRow {
                                 id: embeddingRequireApiKeyRow
 
-                                title: qsTr("Agent: Embedding API Key Required")
+                                title: qsTr("Knowledge: Embedding API Key Required")
                                 description: qsTr("Require an API key before indexing reference knowledge.")
 
                                 CheckBox {
@@ -354,7 +492,7 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 1
                                 Layout.topMargin: 8
-                                visible: root.anySettingVisible()
+                                visible: root.anyKnowledgeSettingVisible()
                                 color: root.borderColor
                             }
 
@@ -362,7 +500,7 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Layout.topMargin: 12
                                 Layout.bottomMargin: 18
-                                visible: !root.anySettingVisible()
+                                visible: !root.anyKnowledgeSettingVisible()
                                 text: qsTr("No settings found")
                                 color: root.secondaryTextColor
                                 font.pixelSize: 13
@@ -372,16 +510,16 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Layout.topMargin: 18
                                 spacing: 10
-                                visible: root.anySettingVisible()
+                                visible: root.anyKnowledgeSettingVisible()
 
                                 Button {
-                                    id: saveButton
+                                    id: knowledgeSaveButton
 
                                     text: qsTr("Save")
                                     hoverEnabled: true
                                     onClicked: root.saveAgentSettings()
                                     contentItem: Label {
-                                        text: saveButton.text
+                                        text: knowledgeSaveButton.text
                                         color: "#ffffff"
                                         font.pixelSize: 13
                                         horizontalAlignment: Text.AlignHCenter
@@ -389,7 +527,7 @@ Rectangle {
                                     }
                                     background: Rectangle {
                                         radius: 2
-                                        color: saveButton.hovered ? root.buttonHoverColor : root.buttonColor
+                                        color: knowledgeSaveButton.hovered ? root.buttonHoverColor : root.buttonColor
                                     }
                                 }
 
@@ -398,10 +536,10 @@ Rectangle {
                                     flat: true
                                     onClicked: {
                                         if (root.settingsController !== null) {
-                                            root.settingsController.resetAgentSettings()
+                                            root.settingsController.resetKnowledgeSettings()
                                         }
                                         root.loadDraft()
-                                        root.saveMessage = qsTr("Agent settings reset.")
+                                        root.saveMessage = qsTr("Knowledge settings reset.")
                                     }
                                 }
 
@@ -416,7 +554,7 @@ Rectangle {
                         }
 
                         ScrollBar.vertical: ScrollBar {
-                            id: agentScrollBar
+                            id: knowledgeScrollBar
 
                             policy: ScrollBar.AsNeeded
                         }
@@ -497,6 +635,32 @@ Rectangle {
         }
     }
 
+    component SettingsComboBox: ComboBox {
+        id: comboRoot
+
+        implicitWidth: 260
+        implicitHeight: 32
+        font.pixelSize: 13
+        hoverEnabled: true
+
+        contentItem: Text {
+            leftPadding: 8
+            rightPadding: 26
+            text: comboRoot.displayText
+            color: root.primaryTextColor
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            font: comboRoot.font
+        }
+
+        background: Rectangle {
+            radius: 2
+            color: root.inputColor
+            border.width: 1
+            border.color: comboRoot.activeFocus ? root.inputFocusColor : root.borderColor
+        }
+    }
+
     Connections {
         target: root.settingsController
         ignoreUnknownSignals: true
@@ -513,6 +677,10 @@ Rectangle {
             return
         }
 
+        loadingDraft = true
+        providerDrafts = ({})
+        root.setProviderCurrent(settingsController.agentProvider)
+        activeProviderDraftId = settingsController.agentProvider
         baseUrlField.text = settingsController.agentBaseUrl
         modelField.text = settingsController.agentModel
         apiKeyField.text = settingsController.agentApiKey
@@ -522,6 +690,7 @@ Rectangle {
         embeddingApiKeyField.text = settingsController.agentEmbeddingApiKey
         embeddingRequireApiKeyBox.checked = settingsController.agentEmbeddingRequireApiKey
         saveMessage = ""
+        loadingDraft = false
     }
 
     function matchesSetting(title, description) {
@@ -534,12 +703,16 @@ Rectangle {
             || description.toLowerCase().indexOf(query) !== -1
     }
 
-    function anySettingVisible() {
-        return baseUrlRow.visible
+    function anyAgentSettingVisible() {
+        return providerRow.visible
+            || baseUrlRow.visible
             || modelRow.visible
             || apiKeyRow.visible
             || requireApiKeyRow.visible
-            || embeddingBaseUrlRow.visible
+    }
+
+    function anyKnowledgeSettingVisible() {
+        return embeddingBaseUrlRow.visible
             || embeddingModelRow.visible
             || embeddingApiKeyRow.visible
             || embeddingRequireApiKeyRow.visible
@@ -550,7 +723,9 @@ Rectangle {
             return false
         }
 
+        root.captureProviderDraft(root.providerIdAt(providerField.currentIndex))
         const saved = settingsController.saveAgentSettings(
+            root.providerIdAt(providerField.currentIndex),
             baseUrlField.text,
             apiKeyField.text,
             modelField.text,
@@ -561,5 +736,77 @@ Rectangle {
             embeddingRequireApiKeyBox.checked)
         saveMessage = saved ? qsTr("Agent settings saved.") : ""
         return saved
+    }
+
+    function providerIdAt(index) {
+        if (index < 0 || index >= providerOptions.length) {
+            return ""
+        }
+        const item = providerOptions[index]
+        if (item === undefined || item === null) {
+            return ""
+        }
+        return item.id !== undefined ? item.id : String(item)
+    }
+
+    function setProviderCurrent(providerId) {
+        for (let i = 0; i < providerOptions.length; ++i) {
+            if (providerIdAt(i) === providerId) {
+                providerField.currentIndex = i
+                activeProviderDraftId = providerId
+                return
+            }
+        }
+        providerField.currentIndex = providerOptions.length > 0 ? 0 : -1
+        activeProviderDraftId = providerIdAt(providerField.currentIndex)
+    }
+
+    function switchProviderDraft(providerId) {
+        if (loadingDraft || settingsController === null || providerId.length === 0) {
+            return
+        }
+
+        root.captureProviderDraft(activeProviderDraftId)
+        root.applyProviderSettings(providerId)
+        activeProviderDraftId = providerId
+    }
+
+    function captureProviderDraft(providerId) {
+        if (providerId === undefined || providerId === null || providerId.length === 0) {
+            return
+        }
+
+        const drafts = Object.assign({}, providerDrafts)
+        drafts[providerId] = {
+            baseUrl: baseUrlField.text,
+            model: modelField.text,
+            apiKey: apiKeyField.text,
+            requireApiKey: requireApiKeyBox.checked
+        }
+        providerDrafts = drafts
+    }
+
+    function providerDraft(providerId) {
+        if (providerDrafts === undefined || providerDrafts === null) {
+            return undefined
+        }
+        return providerDrafts[providerId]
+    }
+
+    function applyProviderSettings(providerId) {
+        if (settingsController === null || providerId.length === 0) {
+            return
+        }
+
+        const draft = root.providerDraft(providerId)
+        const settings = draft !== undefined
+                ? draft
+                : settingsController.agentProviderSettings(providerId)
+        baseUrlField.text = settings.baseUrl !== undefined ? settings.baseUrl : ""
+        modelField.text = settings.model !== undefined ? settings.model : ""
+        apiKeyField.text = settings.apiKey !== undefined ? settings.apiKey : ""
+        requireApiKeyBox.checked = settings.requireApiKey !== undefined
+                ? settings.requireApiKey
+                : settings.apiKeyRequired === true
     }
 }

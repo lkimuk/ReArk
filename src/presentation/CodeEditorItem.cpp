@@ -3,6 +3,7 @@
 #include "core/PerformanceTrace.h"
 
 #include <QClipboard>
+#include <QByteArray>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontMetricsF>
@@ -18,6 +19,16 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <memory>
+#include <string_view>
+#include <utility>
+
+#ifdef REARK_HAS_TREE_SITTER_GRAMMARS
+#include <tree_sitter/api.h>
+
+extern "C" const TSLanguage* tree_sitter_javascript();
+extern "C" const TSLanguage* tree_sitter_typescript();
+#endif
 
 namespace {
 
@@ -31,6 +42,8 @@ constexpr qreal kMinimumGutterWidth = 48.0;
 constexpr int kTabColumns = 4;
 constexpr qsizetype kHighlightCharacterLimit = 1'500'000;
 constexpr int kHighlightLineLimit = 30'000;
+constexpr qsizetype kTreeSitterCharacterLimit = 300'000;
+constexpr int kTreeSitterLineLimit = 8'000;
 constexpr int kMaxSynchronousHighlightCatchUpLines = 256;
 constexpr int kMaxSearchMatches = 20'000;
 
@@ -111,12 +124,12 @@ bool isKeyword(QStringView token)
         QStringLiteral("export"), QStringLiteral("extends"), QStringLiteral("false"),
         QStringLiteral("finally"), QStringLiteral("for"), QStringLiteral("from"),
         QStringLiteral("function"), QStringLiteral("if"), QStringLiteral("import"),
-        QStringLiteral("in"), QStringLiteral("instanceof"), QStringLiteral("interface"),
-        QStringLiteral("let"), QStringLiteral("new"), QStringLiteral("null"),
+        QStringLiteral("in"), QStringLiteral("include"), QStringLiteral("instanceof"), QStringLiteral("interface"),
+        QStringLiteral("lambda"), QStringLiteral("let"), QStringLiteral("new"), QStringLiteral("None"), QStringLiteral("null"),
         QStringLiteral("private"), QStringLiteral("protected"), QStringLiteral("public"),
-        QStringLiteral("return"), QStringLiteral("static"), QStringLiteral("super"),
-        QStringLiteral("switch"), QStringLiteral("this"), QStringLiteral("throw"),
-        QStringLiteral("true"), QStringLiteral("try"), QStringLiteral("typeof"),
+        QStringLiteral("return"), QStringLiteral("static"), QStringLiteral("struct"), QStringLiteral("super"),
+        QStringLiteral("switch"), QStringLiteral("template"), QStringLiteral("this"), QStringLiteral("throw"),
+        QStringLiteral("True"), QStringLiteral("true"), QStringLiteral("try"), QStringLiteral("typedef"), QStringLiteral("typename"), QStringLiteral("typeof"),
         QStringLiteral("undefined"), QStringLiteral("var"), QStringLiteral("void"),
         QStringLiteral("while"), QStringLiteral("yield")
     };
@@ -136,25 +149,214 @@ bool isTypeName(QStringView token)
     return types.contains(token.toString());
 }
 
+#ifdef REARK_HAS_TREE_SITTER_GRAMMARS
+enum class TreeSitterRole {
+    None,
+    Keyword,
+    Type,
+    String,
+    Comment,
+    Number
+};
+
+struct TreeSitterSpan {
+    int start = 0;
+    int end = 0;
+    QColor color;
+};
+
+struct TreeSitterParserDeleter {
+    void operator()(TSParser* parser) const noexcept
+    {
+        ts_parser_delete(parser);
+    }
+};
+
+struct TreeSitterTreeDeleter {
+    void operator()(TSTree* tree) const noexcept
+    {
+        ts_tree_delete(tree);
+    }
+};
+
+using TreeSitterParserPtr = std::unique_ptr<TSParser, TreeSitterParserDeleter>;
+using TreeSitterTreePtr = std::unique_ptr<TSTree, TreeSitterTreeDeleter>;
+
+bool isTreeSitterTypeScriptSyntax(const QString& syntax)
+{
+    const QString lower = QFileInfo(syntax.trimmed()).fileName().toLower();
+    return lower.endsWith(QStringLiteral(".ets"))
+        || lower.endsWith(QStringLiteral(".ts"))
+        || syntax.compare(QStringLiteral("ArkTS"), Qt::CaseInsensitive) == 0
+        || syntax.compare(QStringLiteral("ETS"), Qt::CaseInsensitive) == 0
+        || syntax.compare(QStringLiteral("TypeScript"), Qt::CaseInsensitive) == 0;
+}
+
+bool isTreeSitterJavaScriptSyntax(const QString& syntax)
+{
+    const QString lower = QFileInfo(syntax.trimmed()).fileName().toLower();
+    return lower.endsWith(QStringLiteral(".js"))
+        || lower.endsWith(QStringLiteral(".mjs"))
+        || lower.endsWith(QStringLiteral(".cjs"))
+        || syntax.compare(QStringLiteral("JavaScript"), Qt::CaseInsensitive) == 0;
+}
+
+const TSLanguage* treeSitterLanguageForSyntax(const QString& syntax)
+{
+    if (isTreeSitterTypeScriptSyntax(syntax)) {
+        return tree_sitter_typescript();
+    }
+    if (isTreeSitterJavaScriptSyntax(syntax)) {
+        return tree_sitter_javascript();
+    }
+    return nullptr;
+}
+
+bool isTreeSitterKeyword(std::string_view type)
+{
+    static constexpr std::string_view keywords[] {
+        "abstract", "as", "async", "await", "break", "case", "catch", "class",
+        "const", "continue", "debugger", "default", "delete", "do", "else",
+        "enum", "export", "extends", "false", "finally", "for", "from",
+        "function", "get", "if", "implements", "import", "in", "infer",
+        "instanceof", "interface", "keyof", "let", "namespace", "new", "null",
+        "of", "private", "protected", "public", "readonly", "return", "set",
+        "static", "super", "switch", "this", "throw", "true", "try", "type",
+        "typeof", "undefined", "var", "void", "while", "with", "yield"
+    };
+    return std::find(std::begin(keywords), std::end(keywords), type) != std::end(keywords);
+}
+
+TreeSitterRole roleForTreeSitterNode(std::string_view type)
+{
+    if (type == "comment") {
+        return TreeSitterRole::Comment;
+    }
+    if (type == "string"
+        || type == "template_string"
+        || type == "regex"
+        || type == "string_fragment"
+        || type == "escape_sequence") {
+        return TreeSitterRole::String;
+    }
+    if (type == "number") {
+        return TreeSitterRole::Number;
+    }
+    if (type == "type_identifier"
+        || type == "predefined_type"
+        || type == "type_parameter"
+        || type == "primitive_type") {
+        return TreeSitterRole::Type;
+    }
+    if (isTreeSitterKeyword(type)) {
+        return TreeSitterRole::Keyword;
+    }
+    return TreeSitterRole::None;
+}
+
+QColor colorForTreeSitterRole(TreeSitterRole role, const CodeTheme& theme)
+{
+    switch (role) {
+    case TreeSitterRole::Keyword:
+        return theme.keyword;
+    case TreeSitterRole::Type:
+        return theme.type;
+    case TreeSitterRole::String:
+        return theme.string;
+    case TreeSitterRole::Comment:
+        return theme.comment;
+    case TreeSitterRole::Number:
+        return theme.number;
+    case TreeSitterRole::None:
+        break;
+    }
+    return {};
+}
+
+QVector<int> utf8ByteToUtf16PositionMap(const QString& text, const QByteArray& utf8)
+{
+    QVector<int> map(utf8.size() + 1);
+    int byteOffset = 0;
+    map[0] = 0;
+
+    for (int i = 0; i < text.size();) {
+        QString character;
+        int charEnd = i + 1;
+        if (text.at(i).isHighSurrogate()
+            && i + 1 < text.size()
+            && text.at(i + 1).isLowSurrogate()) {
+            character.append(text.at(i));
+            character.append(text.at(i + 1));
+            charEnd = i + 2;
+        } else {
+            character.append(text.at(i));
+        }
+
+        const QByteArray bytes = character.toUtf8();
+        for (int b = 1; b <= bytes.size() && byteOffset + b < map.size(); ++b) {
+            map[byteOffset + b] = b == bytes.size() ? charEnd : i;
+        }
+        byteOffset += bytes.size();
+        i = charEnd;
+    }
+
+    if (!map.isEmpty()) {
+        map[map.size() - 1] = text.size();
+    }
+    return map;
+}
+#endif
+
 } // namespace
 
 class CodeLineHighlighter {
 public:
     using LineProvider = std::function<QStringView(int)>;
 
-    void setInputs(const QString& syntax, const QString& themeId, bool darkTheme)
+    void setInputs(const QString& syntax, const QString& themeId, bool darkTheme, const QString& text)
     {
         const QString lower = QFileInfo(syntax.trimmed()).fileName().toLower();
+        hashLineComments_ = lower.endsWith(QStringLiteral(".bash"))
+            || lower.endsWith(QStringLiteral(".cmake"))
+            || lower.endsWith(QStringLiteral(".py"))
+            || lower.endsWith(QStringLiteral(".sh"))
+            || syntax.compare(QStringLiteral("Bash"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("CMake"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("Python"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("Shell"), Qt::CaseInsensitive) == 0;
         syntaxSupported_ = syntax.trimmed().isEmpty()
             || lower.endsWith(QStringLiteral(".abc"))
+            || lower.endsWith(QStringLiteral(".bash"))
+            || lower.endsWith(QStringLiteral(".c"))
+            || lower.endsWith(QStringLiteral(".cc"))
+            || lower.endsWith(QStringLiteral(".cmake"))
+            || lower.endsWith(QStringLiteral(".cpp"))
             || lower.endsWith(QStringLiteral(".ets"))
+            || lower.endsWith(QStringLiteral(".h"))
+            || lower.endsWith(QStringLiteral(".hpp"))
             || lower.endsWith(QStringLiteral(".js"))
             || lower.endsWith(QStringLiteral(".json"))
+            || lower.endsWith(QStringLiteral(".py"))
+            || lower.endsWith(QStringLiteral(".sh"))
             || lower.endsWith(QStringLiteral(".ts"))
+            || syntax.compare(QStringLiteral("Bash"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("C"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("CMake"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("C++"), Qt::CaseInsensitive) == 0
             || syntax.compare(QStringLiteral("JSON"), Qt::CaseInsensitive) == 0
             || syntax.compare(QStringLiteral("TypeScript"), Qt::CaseInsensitive) == 0
-            || syntax.compare(QStringLiteral("JavaScript"), Qt::CaseInsensitive) == 0;
+            || syntax.compare(QStringLiteral("JavaScript"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("Python"), Qt::CaseInsensitive) == 0
+            || syntax.compare(QStringLiteral("Shell"), Qt::CaseInsensitive) == 0;
         theme_ = codeThemeForId(themeId, darkTheme);
+        syntax_ = syntax;
+        documentText_ = text;
+#ifdef REARK_HAS_TREE_SITTER_GRAMMARS
+        treeSitterAttempted_ = false;
+        treeSitterReady_ = false;
+        treeSitterLineSegments_.clear();
+        treeSitterLineStarts_.clear();
+#endif
         reset();
     }
 
@@ -181,6 +383,15 @@ public:
             return {};
         }
 
+#ifdef REARK_HAS_TREE_SITTER_GRAMMARS
+        if (ensureTreeSitterSegments(lineCount)) {
+            if (line >= 0 && line < treeSitterLineSegments_.size()) {
+                return treeSitterLineSegments_.at(line);
+            }
+            return {};
+        }
+#endif
+
         if (states_.size() < lineCount + 1) {
             states_.resize(lineCount + 1);
         }
@@ -202,6 +413,195 @@ public:
     }
 
 private:
+#ifdef REARK_HAS_TREE_SITTER_GRAMMARS
+    [[nodiscard]] bool ensureTreeSitterSegments(int lineCount)
+    {
+        if (treeSitterAttempted_) {
+            return treeSitterReady_;
+        }
+
+        treeSitterAttempted_ = true;
+        treeSitterReady_ = buildTreeSitterSegments(lineCount);
+        return treeSitterReady_;
+    }
+
+    [[nodiscard]] bool buildTreeSitterSegments(int lineCount)
+    {
+        treeSitterLineSegments_.clear();
+        treeSitterLineStarts_.clear();
+
+        if (documentText_.isEmpty()
+            || documentText_.size() > kTreeSitterCharacterLimit
+            || lineCount > kTreeSitterLineLimit) {
+            return false;
+        }
+
+        const TSLanguage* language = treeSitterLanguageForSyntax(syntax_);
+        if (language == nullptr) {
+            return false;
+        }
+
+        TreeSitterParserPtr parser(ts_parser_new());
+        if (parser == nullptr || !ts_parser_set_language(parser.get(), language)) {
+            return false;
+        }
+
+        const QByteArray utf8 = documentText_.toUtf8();
+        TreeSitterTreePtr tree(ts_parser_parse_string(
+            parser.get(),
+            nullptr,
+            utf8.constData(),
+            static_cast<uint32_t>(utf8.size())));
+        if (tree == nullptr) {
+            return false;
+        }
+
+        rebuildTreeSitterLineStarts();
+        treeSitterLineSegments_.resize(std::max(1, lineCount));
+
+        const QVector<int> byteToPosition = utf8ByteToUtf16PositionMap(documentText_, utf8);
+        collectTreeSitterSpans(ts_tree_root_node(tree.get()), byteToPosition);
+        normalizeTreeSitterSegments();
+
+        return true;
+    }
+
+    void rebuildTreeSitterLineStarts()
+    {
+        treeSitterLineStarts_.append(0);
+        for (int i = 0; i < documentText_.size(); ++i) {
+            if (documentText_.at(i) == QLatin1Char('\n') && i + 1 < documentText_.size()) {
+                treeSitterLineStarts_.append(i + 1);
+            }
+        }
+        if (treeSitterLineStarts_.isEmpty()) {
+            treeSitterLineStarts_.append(0);
+        }
+    }
+
+    [[nodiscard]] int treeSitterLineForPosition(int position) const
+    {
+        position = std::clamp(position, 0, static_cast<int>(documentText_.size()));
+        const auto it = std::upper_bound(treeSitterLineStarts_.cbegin(), treeSitterLineStarts_.cend(), position);
+        if (it == treeSitterLineStarts_.cbegin()) {
+            return 0;
+        }
+        return static_cast<int>(std::distance(treeSitterLineStarts_.cbegin(), it)) - 1;
+    }
+
+    [[nodiscard]] int treeSitterLineStart(int line) const
+    {
+        if (treeSitterLineStarts_.isEmpty()) {
+            return 0;
+        }
+        line = std::clamp(line, 0, static_cast<int>(treeSitterLineStarts_.size()) - 1);
+        return treeSitterLineStarts_.at(line);
+    }
+
+    [[nodiscard]] int treeSitterLineEnd(int line) const
+    {
+        line = std::clamp(line, 0, static_cast<int>(treeSitterLineStarts_.size()) - 1);
+        if (line + 1 < treeSitterLineStarts_.size()) {
+            return std::max(treeSitterLineStarts_.at(line), treeSitterLineStarts_.at(line + 1) - 1);
+        }
+        return static_cast<int>(documentText_.size());
+    }
+
+    void appendTreeSitterSpan(int start, int end, const QColor& color)
+    {
+        const int documentLength = static_cast<int>(documentText_.size());
+        start = std::clamp(start, 0, documentLength);
+        end = std::clamp(end, start, documentLength);
+        if (start >= end || !color.isValid()) {
+            return;
+        }
+
+        const int firstLine = treeSitterLineForPosition(start);
+        const int lastLine = treeSitterLineForPosition(std::max(start, end - 1));
+        for (int line = firstLine; line <= lastLine && line < treeSitterLineSegments_.size(); ++line) {
+            const int lineStart = treeSitterLineStart(line);
+            const int lineEnd = treeSitterLineEnd(line);
+            const int segmentStart = std::max(start, lineStart);
+            const int segmentEnd = std::min(end, lineEnd);
+            if (segmentStart >= segmentEnd) {
+                continue;
+            }
+            treeSitterLineSegments_[line].append(HighlightSegment {
+                segmentStart - lineStart,
+                segmentEnd - segmentStart,
+                color
+            });
+        }
+    }
+
+    void collectTreeSitterSpans(const TSNode& node, const QVector<int>& byteToPosition)
+    {
+        const std::string_view type(ts_node_type(node));
+        const TreeSitterRole role = roleForTreeSitterNode(type);
+        const bool hasChildren = ts_node_child_count(node) > 0;
+        const bool shouldColorWholeNode = role == TreeSitterRole::Comment
+            || role == TreeSitterRole::String
+            || role == TreeSitterRole::Number
+            || role == TreeSitterRole::Type
+            || (!hasChildren && role == TreeSitterRole::Keyword);
+
+        if (shouldColorWholeNode) {
+            const uint32_t startByte = ts_node_start_byte(node);
+            const uint32_t endByte = ts_node_end_byte(node);
+            if (startByte < static_cast<uint32_t>(byteToPosition.size())
+                && endByte < static_cast<uint32_t>(byteToPosition.size())) {
+                appendTreeSitterSpan(
+                    byteToPosition.at(static_cast<int>(startByte)),
+                    byteToPosition.at(static_cast<int>(endByte)),
+                    colorForTreeSitterRole(role, theme_));
+            }
+            if (role == TreeSitterRole::String || role == TreeSitterRole::Comment) {
+                return;
+            }
+        }
+
+        const uint32_t childCount = ts_node_child_count(node);
+        for (uint32_t i = 0; i < childCount; ++i) {
+            collectTreeSitterSpans(ts_node_child(node, i), byteToPosition);
+        }
+    }
+
+    void normalizeTreeSitterSegments()
+    {
+        for (QVector<HighlightSegment>& lineSegments : treeSitterLineSegments_) {
+            std::sort(lineSegments.begin(), lineSegments.end(), [](const HighlightSegment& left, const HighlightSegment& right) {
+                if (left.start != right.start) {
+                    return left.start < right.start;
+                }
+                return left.length > right.length;
+            });
+
+            QVector<HighlightSegment> normalized;
+            int coveredUntil = -1;
+            for (const HighlightSegment& segment : std::as_const(lineSegments)) {
+                if (segment.length <= 0) {
+                    continue;
+                }
+                int start = segment.start;
+                const int end = segment.start + segment.length;
+                if (start < coveredUntil) {
+                    start = coveredUntil;
+                }
+                if (start >= end) {
+                    continue;
+                }
+                normalized.append(HighlightSegment {
+                    start,
+                    end - start,
+                    segment.color
+                });
+                coveredUntil = end;
+            }
+            lineSegments = normalized;
+        }
+    }
+#endif
+
     void appendSegment(int offset, int length, const QColor& color)
     {
         if (length <= 0) {
@@ -238,6 +638,11 @@ private:
             }
 
             const QChar ch = text.at(i);
+            if (hashLineComments_ && ch == QLatin1Char('#')) {
+                appendSegment(i, static_cast<int>(text.size()) - i, theme_.comment);
+                return false;
+            }
+
             if (ch == QLatin1Char('/') && i + 1 < text.size()) {
                 const QChar next = text.at(i + 1);
                 if (next == QLatin1Char('/')) {
@@ -301,10 +706,19 @@ private:
 
     bool enabled_ = false;
     bool syntaxSupported_ = true;
+    bool hashLineComments_ = false;
     int cachedLineCount_ = 0;
+    QString syntax_;
+    QString documentText_;
     CodeTheme theme_ = codeThemeForId(QStringLiteral("GitHub Dark"), true);
     QVector<bool> states_ { false };
     QVector<HighlightSegment> segments_;
+#ifdef REARK_HAS_TREE_SITTER_GRAMMARS
+    bool treeSitterAttempted_ = false;
+    bool treeSitterReady_ = false;
+    QVector<int> treeSitterLineStarts_;
+    QVector<QVector<HighlightSegment>> treeSitterLineSegments_;
+#endif
 };
 
 CodeEditorItem::CodeEditorItem(QQuickItem* parent)
@@ -408,6 +822,23 @@ void CodeEditorItem::setFastScrolling(bool fastScrolling)
     fastScrolling_ = fastScrolling;
     update();
     emit fastScrollingChanged();
+}
+
+bool CodeEditorItem::showGutter() const
+{
+    return showGutter_;
+}
+
+void CodeEditorItem::setShowGutter(bool showGutter)
+{
+    if (showGutter_ == showGutter) {
+        return;
+    }
+
+    showGutter_ = showGutter;
+    refreshMetrics();
+    update();
+    emit showGutterChanged();
 }
 
 qreal CodeEditorItem::scrollX() const
@@ -633,8 +1064,10 @@ void CodeEditorItem::paint(QPainter* painter)
     painter->fillRect(boundingRect(), editorColor_);
 
     const qreal gutter = gutterWidth();
-    painter->fillRect(QRectF(0.0, 0.0, gutter, height()), gutterColor_);
-    painter->fillRect(QRectF(gutter - 1.0, 0.0, 1.0, height()), dividerColor_);
+    if (showGutter_) {
+        painter->fillRect(QRectF(0.0, 0.0, gutter, height()), gutterColor_);
+        painter->fillRect(QRectF(gutter - 1.0, 0.0, 1.0, height()), dividerColor_);
+    }
 
     painter->setFont(editorFont());
 
@@ -660,9 +1093,11 @@ void CodeEditorItem::paint(QPainter* painter)
             painter->fillRect(QRectF(gutter, y, width() - gutter, lineHeight_), currentLineColor_);
         }
 
-        const QRectF numberRect(0.0, y, gutter - kGutterPadding, lineHeight_);
-        painter->setPen(gutterTextColor_);
-        painter->drawText(numberRect, Qt::AlignRight | Qt::AlignVCenter, QString::number(line + 1));
+        if (showGutter_) {
+            const QRectF numberRect(0.0, y, gutter - kGutterPadding, lineHeight_);
+            painter->setPen(gutterTextColor_);
+            painter->drawText(numberRect, Qt::AlignRight | Qt::AlignVCenter, QString::number(line + 1));
+        }
 
         const int blockStart = lineStartPosition(line);
         const int blockEnd = lineEndPosition(line);
@@ -980,7 +1415,7 @@ void CodeEditorItem::refreshSyntaxHighlighter()
         return;
     }
 
-    syntaxHighlighter_->setInputs(syntax_, highlightTheme_, darkTheme_);
+    syntaxHighlighter_->setInputs(syntax_, highlightTheme_, darkTheme_, text_);
     syntaxHighlighter_->setEnabled(text_.size() <= kHighlightCharacterLimit && lineCount() <= kHighlightLineLimit);
 }
 
@@ -1247,6 +1682,10 @@ int CodeEditorItem::lineCount() const
 
 qreal CodeEditorItem::gutterWidth() const
 {
+    if (!showGutter_) {
+        return 0.0;
+    }
+
     const int digits = QString::number(lineCount()).length();
     const QFontMetricsF metrics(editorFont());
     return std::max(kMinimumGutterWidth, kGutterPadding * 2.0 + metrics.horizontalAdvance(QString(digits, QLatin1Char('9'))));

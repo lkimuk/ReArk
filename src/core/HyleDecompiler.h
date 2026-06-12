@@ -75,7 +75,8 @@ struct DisassemblyResult {
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     std::size_t hyleId,
-    const QString& name);
+    const QString& name,
+    std::stop_token stopToken = {});
 [[nodiscard]] SourceBatchResult decompileSourceFiles(
     const std::shared_ptr<SessionContext>& context,
     std::vector<SourceRequest> requests);
@@ -86,12 +87,14 @@ struct DisassemblyResult {
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     std::size_t sourceFileId,
-    const QString& name);
+    const QString& name,
+    std::stop_token stopToken = {});
 [[nodiscard]] SourceResult readResourceContent(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     std::size_t hyleId,
-    const QString& name);
+    const QString& name,
+    std::stop_token stopToken = {});
 [[nodiscard]] SourceResult readSignatureContent(
     const QString& filePath,
     int nodeIndex,
@@ -99,7 +102,8 @@ struct DisassemblyResult {
 [[nodiscard]] SourceResult readSummaryContent(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
-    const QString& name);
+    const QString& name,
+    std::stop_token stopToken = {});
 
 } // namespace HyleDecompiler
 

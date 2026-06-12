@@ -50,6 +50,7 @@ public:
         QString contentMode;
         QString content;
         QString disassembly;
+        std::size_t hyleId = 0;
         bool loaded = false;
         bool hasDisassembly = false;
         bool disassemblyLoaded = false;
@@ -61,6 +62,8 @@ public:
         QString entryPoints;
         QString signatureSummary;
         QVector<AgentFileSnapshot> files;
+        QString packagePath;
+        std::shared_ptr<HyleDecompiler::SessionContext> packageContext;
     };
 
     explicit DecompilerController(ResourcePreviewProvider* previewProvider, QObject* parent = nullptr);

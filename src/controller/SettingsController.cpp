@@ -6,6 +6,22 @@ SettingsController::SettingsController(QObject* parent)
     loadAgentSettings();
 }
 
+QString SettingsController::agentProvider() const
+{
+    return agentProvider_;
+}
+
+void SettingsController::setAgentProvider(const QString& agentProvider)
+{
+    const QString trimmed = agentProvider.trimmed();
+    if (agentProvider_ == trimmed) {
+        return;
+    }
+
+    agentProvider_ = trimmed;
+    emit agentSettingsChanged();
+}
+
 QString SettingsController::agentBaseUrl() const
 {
     return agentBaseUrl_;
@@ -135,9 +151,15 @@ QString SettingsController::agentValidationMessage() const
     return agentValidationMessage_;
 }
 
+QVariantList SettingsController::agentProviders() const
+{
+    return AgentSettingsStore::availableProviders();
+}
+
 void SettingsController::reload()
 {
     const QString previousBaseUrl = agentBaseUrl_;
+    const QString previousProvider = agentProvider_;
     const QString previousApiKey = agentApiKey_;
     const QString previousModel = agentModel_;
     const bool previousRequireApiKey = agentRequireApiKey_;
@@ -148,7 +170,8 @@ void SettingsController::reload()
 
     loadAgentSettings();
 
-    if (agentBaseUrl_ != previousBaseUrl
+    if (agentProvider_ != previousProvider
+        || agentBaseUrl_ != previousBaseUrl
         || agentApiKey_ != previousApiKey
         || agentModel_ != previousModel
         || agentRequireApiKey_ != previousRequireApiKey
@@ -166,7 +189,18 @@ void SettingsController::reload()
     }
 }
 
+QVariantMap SettingsController::agentProviderDefaults(const QString& provider) const
+{
+    return AgentSettingsStore::providerDefaults(provider);
+}
+
+QVariantMap SettingsController::agentProviderSettings(const QString& provider) const
+{
+    return AgentSettingsStore::providerSettings(provider);
+}
+
 bool SettingsController::saveAgentSettings(
+    const QString& provider,
     const QString& baseUrl,
     const QString& apiKey,
     const QString& model,
@@ -177,6 +211,7 @@ bool SettingsController::saveAgentSettings(
     bool embeddingRequireApiKey)
 {
     AgentSettings settings {
+        .provider = provider.trimmed(),
         .baseUrl = baseUrl.trimmed(),
         .apiKey = apiKey,
         .model = model.trimmed(),
@@ -208,9 +243,22 @@ void SettingsController::resetAgentSettings()
     reload();
 }
 
+void SettingsController::resetAgentRuntimeSettings()
+{
+    AgentSettingsStore::resetRuntimeSettings();
+    reload();
+}
+
+void SettingsController::resetKnowledgeSettings()
+{
+    AgentSettingsStore::resetKnowledgeSettings();
+    reload();
+}
+
 void SettingsController::loadAgentSettings()
 {
     const AgentSettings settings = AgentSettingsStore::load();
+    agentProvider_ = settings.provider;
     agentBaseUrl_ = settings.baseUrl;
     agentApiKey_ = settings.apiKey;
     agentModel_ = settings.model;
@@ -224,7 +272,8 @@ void SettingsController::loadAgentSettings()
 
 void SettingsController::setAgentSettings(const AgentSettings& settings)
 {
-    const bool changed = agentBaseUrl_ != settings.baseUrl
+    const bool changed = agentProvider_ != settings.provider
+        || agentBaseUrl_ != settings.baseUrl
         || agentApiKey_ != settings.apiKey
         || agentModel_ != settings.model
         || agentRequireApiKey_ != settings.requireApiKey
@@ -237,6 +286,7 @@ void SettingsController::setAgentSettings(const AgentSettings& settings)
         || agentEmbeddingModel_ != settings.embeddingModel
         || agentEmbeddingRequireApiKey_ != settings.embeddingRequireApiKey;
 
+    agentProvider_ = settings.provider;
     agentBaseUrl_ = settings.baseUrl;
     agentApiKey_ = settings.apiKey;
     agentModel_ = settings.model;

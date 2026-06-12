@@ -22,6 +22,7 @@ class CodeEditorItem : public QQuickPaintedItem {
     Q_PROPERTY(QString highlightTheme READ highlightTheme WRITE setHighlightTheme NOTIFY highlightThemeChanged)
     Q_PROPERTY(QString syntax READ syntax WRITE setSyntax NOTIFY syntaxChanged)
     Q_PROPERTY(bool fastScrolling READ fastScrolling WRITE setFastScrolling NOTIFY fastScrollingChanged)
+    Q_PROPERTY(bool showGutter READ showGutter WRITE setShowGutter NOTIFY showGutterChanged)
     Q_PROPERTY(qreal scrollX READ scrollX WRITE setScrollX NOTIFY scrollXChanged)
     Q_PROPERTY(qreal scrollY READ scrollY WRITE setScrollY NOTIFY scrollYChanged)
     Q_PROPERTY(qreal documentWidth READ documentWidth NOTIFY documentMetricsChanged)
@@ -47,6 +48,8 @@ public:
     void setSyntax(const QString& syntax);
     [[nodiscard]] bool fastScrolling() const;
     void setFastScrolling(bool fastScrolling);
+    [[nodiscard]] bool showGutter() const;
+    void setShowGutter(bool showGutter);
     [[nodiscard]] qreal scrollX() const;
     void setScrollX(qreal scrollX);
     [[nodiscard]] qreal scrollY() const;
@@ -85,6 +88,7 @@ signals:
     void highlightThemeChanged();
     void syntaxChanged();
     void fastScrollingChanged();
+    void showGutterChanged();
     void scrollXChanged();
     void scrollYChanged();
     void documentMetricsChanged();
@@ -149,6 +153,7 @@ private:
     QVector<int> lineStarts_;
     bool darkTheme_ = true;
     bool fastScrolling_ = false;
+    bool showGutter_ = true;
     QString highlightTheme_ = QStringLiteral("GitHub Dark");
     QString syntax_;
     qreal lineHeight_ = 1.0;

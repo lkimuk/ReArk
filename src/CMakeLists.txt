@@ -33,6 +33,8 @@ qt_add_executable(${PROJECT_NAME}
     controller/SettingsController.h
     controller/UpdateController.cpp
     controller/UpdateController.h
+    model/AgentMessageModel.cpp
+    model/AgentMessageModel.h
     model/DocumentContent.h
     model/OpenFileTabsModel.cpp
     model/OpenFileTabsModel.h
@@ -140,8 +142,88 @@ if(wuwe_FOUND)
     if(REARK_WUWE_INCLUDE_DIRS)
         target_include_directories(${PROJECT_NAME} BEFORE PRIVATE ${REARK_WUWE_INCLUDE_DIRS})
     endif()
-    target_link_libraries(${PROJECT_NAME} PRIVATE wuwe::wuwe)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE REARK_HAS_WUWE=1)
+    get_target_property(REARK_WUWE_IMPORTED_CONFIGS wuwe::wuwe IMPORTED_CONFIGURATIONS)
+    get_target_property(REARK_WUWE_IMPORTED_LOCATION_DEBUG wuwe::wuwe IMPORTED_LOCATION_DEBUG)
+    get_target_property(REARK_WUWE_IMPORTED_LOCATION_RELEASE wuwe::wuwe IMPORTED_LOCATION_RELEASE)
+    if(REARK_WUWE_IMPORTED_CONFIGS MATCHES "DEBUG"
+        AND REARK_WUWE_IMPORTED_LOCATION_DEBUG
+        AND NOT REARK_WUWE_IMPORTED_LOCATION_DEBUG STREQUAL REARK_WUWE_IMPORTED_LOCATION_RELEASE)
+        set(REARK_WUWE_CONFIG_EXPRESSION "1")
+        message(STATUS "Wuwe Agent runtime enabled for all imported configurations")
+    else()
+        set(REARK_WUWE_CONFIG_EXPRESSION "$<NOT:$<CONFIG:Debug>>")
+        message(STATUS "Wuwe Agent runtime disabled for Debug because the installed package exports no Debug library")
+    endif()
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        "$<${REARK_WUWE_CONFIG_EXPRESSION}:wuwe::wuwe>"
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        "$<${REARK_WUWE_CONFIG_EXPRESSION}:REARK_HAS_WUWE=1>"
+    )
+endif()
+
+if(cmark-gfm_FOUND AND cmark-gfm-extensions_FOUND)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        libcmark-gfm
+        libcmark-gfm-extensions
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE REARK_HAS_CMARK_GFM=1)
+endif()
+
+if(unofficial-tree-sitter_FOUND)
+    set(REARK_TREE_SITTER_GRAMMAR_ROOT "${CMAKE_SOURCE_DIR}/third_party/tree-sitter-grammars")
+    set(REARK_TREE_SITTER_JAVASCRIPT_ROOT "${REARK_TREE_SITTER_GRAMMAR_ROOT}/javascript")
+    set(REARK_TREE_SITTER_TYPESCRIPT_ROOT "${REARK_TREE_SITTER_GRAMMAR_ROOT}/typescript/typescript")
+
+    if(EXISTS "${REARK_TREE_SITTER_JAVASCRIPT_ROOT}/src/parser.c"
+        AND EXISTS "${REARK_TREE_SITTER_TYPESCRIPT_ROOT}/src/parser.c")
+        add_library(reark_tree_sitter_javascript STATIC
+            "${REARK_TREE_SITTER_JAVASCRIPT_ROOT}/src/parser.c"
+            "${REARK_TREE_SITTER_JAVASCRIPT_ROOT}/src/scanner.c"
+        )
+        target_include_directories(reark_tree_sitter_javascript PRIVATE
+            "${REARK_TREE_SITTER_JAVASCRIPT_ROOT}/src"
+        )
+        set_target_properties(reark_tree_sitter_javascript PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            POSITION_INDEPENDENT_CODE ON
+        )
+
+        add_library(reark_tree_sitter_typescript STATIC
+            "${REARK_TREE_SITTER_TYPESCRIPT_ROOT}/src/parser.c"
+            "${REARK_TREE_SITTER_TYPESCRIPT_ROOT}/src/scanner.c"
+        )
+        target_include_directories(reark_tree_sitter_typescript PRIVATE
+            "${REARK_TREE_SITTER_TYPESCRIPT_ROOT}/src"
+        )
+        set_target_properties(reark_tree_sitter_typescript PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            POSITION_INDEPENDENT_CODE ON
+        )
+
+        target_link_libraries(${PROJECT_NAME} PRIVATE
+            reark_tree_sitter_javascript
+            reark_tree_sitter_typescript
+        )
+        if(MSVC)
+            foreach(_reark_tree_sitter_grammar_target
+                reark_tree_sitter_javascript
+                reark_tree_sitter_typescript)
+                target_compile_options(${_reark_tree_sitter_grammar_target} PRIVATE
+                    /bigobj
+                    /wd4244
+                    /wd4267
+                )
+            endforeach()
+        endif()
+        message(STATUS "Tree-sitter JavaScript/TypeScript grammars enabled")
+        target_compile_definitions(${PROJECT_NAME} PRIVATE REARK_HAS_TREE_SITTER_GRAMMARS=1)
+    endif()
+
+    target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::tree-sitter::tree-sitter)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE REARK_HAS_TREE_SITTER=1)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE

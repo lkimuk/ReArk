@@ -72,6 +72,11 @@
 <context>
     <name>AgentController</name>
     <message>
+        <location filename="../../src/controller/AgentController.cpp" line="45"/>
+        <source>Agent tool call rounds were exhausted before a final answer was produced.</source>
+        <translation>Agent 工具调用轮次已用尽，尚未生成最终答案。</translation>
+    </message>
+    <message>
         <location filename="../../src/controller/AgentController.cpp" line="519"/>
         <source>Missing API key. Configure Agent settings or set REARK_LLM_API_KEY / OPENROUTER_API_KEY.</source>
         <translation>缺少 API Key。请在 Agent 设置中配置，或设置 REARK_LLM_API_KEY / OPENROUTER_API_KEY。</translation>
@@ -135,6 +140,11 @@
         <source>Smart analysis is not available in this ReArk build.</source>
         <translation>当前 ReArk 构建不支持智能分析。</translation>
     </message>
+    <message>
+        <location filename="../../src/controller/AgentController.cpp" line="911"/>
+        <source>Failed to create Wuwe LLM provider %1: %2</source>
+        <translation>创建 Wuwe LLM Provider %1 失败：%2</translation>
+    </message>
 </context>
 <context>
     <name>AgentKnowledgeController</name>
@@ -181,6 +191,11 @@
 </context>
 <context>
     <name>AgentSettings</name>
+    <message>
+        <location filename="../../src/controller/AgentSettings.cpp" line="431"/>
+        <source>Provider is not supported.</source>
+        <translation>不支持该 Provider。</translation>
+    </message>
     <message>
         <location filename="../../src/controller/AgentSettings.cpp" line="177"/>
         <source>Base URL is required.</source>
@@ -921,14 +936,29 @@
         <translation>Agent</translation>
     </message>
     <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="157"/>
+        <source>Knowledge</source>
+        <translation>知识库</translation>
+    </message>
+    <message>
         <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="209"/>
         <source>Agent Runtime</source>
         <translation>Agent 运行时</translation>
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="220"/>
-        <source>Configure the model endpoint used by ReArk smart analysis.</source>
-        <translation>配置 ReArk 智能分析使用的模型端点。</translation>
+        <source>Configure the model provider and endpoint used by ReArk smart analysis.</source>
+        <translation>配置 ReArk 智能分析使用的模型 Provider 和端点。</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="231"/>
+        <source>Agent: Provider</source>
+        <translation>Agent: Provider</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="232"/>
+        <source>Wuwe LLM provider preset or OpenAI-compatible endpoint.</source>
+        <translation>Wuwe LLM Provider 预设或 OpenAI 兼容端点。</translation>
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="227"/>
@@ -937,8 +967,8 @@
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="228"/>
-        <source>OpenRouter, OpenAI-compatible, or local model service endpoint.</source>
-        <translation>OpenRouter、OpenAI 兼容服务或本地模型服务端点。</translation>
+        <source>Provider endpoint. Keep provider defaults here, or override for compatible gateways.</source>
+        <translation>Provider 端点。可以保留默认值，也可以为兼容网关覆盖。</translation>
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="237"/>
@@ -981,6 +1011,56 @@
         <translation>需要 API Key</translation>
     </message>
     <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="423"/>
+        <source>Configure reference knowledge indexing for RAG-assisted analysis.</source>
+        <translation>配置 RAG 辅助分析使用的参考知识索引。</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="432"/>
+        <source>Knowledge: Embedding Base URL</source>
+        <translation>知识库: Embedding Base URL</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="433"/>
+        <source>OpenAI-compatible embedding endpoint used to index reference knowledge.</source>
+        <translation>用于索引参考知识的 OpenAI 兼容 Embedding 端点。</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="444"/>
+        <source>Knowledge: Embedding Model</source>
+        <translation>知识库: Embedding 模型</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="445"/>
+        <source>Embedding model used by the reference knowledge index.</source>
+        <translation>参考知识索引使用的 Embedding 模型。</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="456"/>
+        <source>Knowledge: Embedding API Key</source>
+        <translation>知识库: Embedding API Key</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="457"/>
+        <source>Leave empty for local embedding services that do not require authentication.</source>
+        <translation>不需要认证的本地 Embedding 服务可以留空。</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="481"/>
+        <source>Knowledge: Embedding API Key Required</source>
+        <translation>知识库: Embedding API Key 要求</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="482"/>
+        <source>Require an API key before indexing reference knowledge.</source>
+        <translation>索引参考知识前要求提供 API Key。</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="486"/>
+        <source>Require embedding API key</source>
+        <translation>需要 Embedding API Key</translation>
+    </message>
+    <message>
         <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="298"/>
         <source>No settings found</source>
         <translation>未找到设置项</translation>
@@ -999,6 +1079,11 @@
         <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="327"/>
         <source>Agent settings reset.</source>
         <translation>Agent 设置已重置。</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="542"/>
+        <source>Knowledge settings reset.</source>
+        <translation>知识库设置已重置。</translation>
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/SettingsPage.qml" line="455"/>
@@ -1053,8 +1138,8 @@
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="517"/>
-        <source>Add reference knowledge</source>
-        <translation>添加参考知识</translation>
+        <source>Add attachment</source>
+        <translation>添加附件</translation>
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="555"/>
@@ -1067,29 +1152,9 @@
         <translation>请等待参考知识索引完成</translation>
     </message>
     <message>
-        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="597"/>
-        <source>Add Reference File...</source>
-        <translation>添加参考文件...</translation>
-    </message>
-    <message>
-        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="602"/>
-        <source>Add Reference Folder...</source>
-        <translation>添加参考文件夹...</translation>
-    </message>
-    <message>
-        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="607"/>
-        <source>Add Web Page...</source>
-        <translation>添加网页...</translation>
-    </message>
-    <message>
-        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="614"/>
-        <source>Clear References</source>
-        <translation>清空参考知识</translation>
-    </message>
-    <message>
         <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="627"/>
-        <source>Add Reference File</source>
-        <translation>添加参考文件</translation>
+        <source>Add Attachment</source>
+        <translation>添加附件</translation>
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="630"/>
@@ -1100,16 +1165,6 @@
         <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="631"/>
         <source>All files (*)</source>
         <translation>所有文件 (*)</translation>
-    </message>
-    <message>
-        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="642"/>
-        <source>Add Reference Folder</source>
-        <translation>添加参考文件夹</translation>
-    </message>
-    <message>
-        <location filename="../../src/ui/qml/ReArk/SmartAnalysisPage.qml" line="655"/>
-        <source>Add Web Page</source>
-        <translation>添加网页</translation>
     </message>
 </context>
 <context>

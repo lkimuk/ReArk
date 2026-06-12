@@ -1,13 +1,27 @@
 #include "presentation/MarkdownRenderer.h"
 
-#include "presentation/CodeTheme.h"
-
-#include <QColor>
-#include <QFontDatabase>
+#include <QFutureWatcher>
+#include <QMetaObject>
 #include <QRegularExpression>
+#include <QStringList>
+#ifndef REARK_HAS_CMARK_GFM
 #include <QTextDocument>
+#endif
+#include <QVariantMap>
+#include <QtConcurrent>
+
+#ifdef REARK_HAS_CMARK_GFM
+#include <cmark-gfm-core-extensions.h>
+#include <cmark-gfm-extension_api.h>
+#include <cmark-gfm.h>
+#endif
 
 namespace {
+
+struct MarkdownInlineCode {
+    QString token;
+    QString code;
+};
 
 bool isFenceLine(const QString& line, QString* marker, QString* info)
 {
@@ -51,36 +65,16 @@ QString normalizedLanguage(QString language)
     if (language == QStringLiteral("cpp") || language == QStringLiteral("c++")) {
         return QStringLiteral("cpp");
     }
+    if (language == QStringLiteral("python")) {
+        return QStringLiteral("py");
+    }
+    if (language == QStringLiteral("shell") || language == QStringLiteral("zsh")) {
+        return QStringLiteral("sh");
+    }
+    if (language == QStringLiteral("cmakelists") || language == QStringLiteral("cmake")) {
+        return QStringLiteral("cmake");
+    }
     return language;
-}
-
-QString displayLanguage(const QString& language)
-{
-    const QString normalized = normalizedLanguage(language);
-    if (normalized == QStringLiteral("text") || normalized == QStringLiteral("plain")) {
-        return {};
-    }
-    if (normalized == QStringLiteral("ets")) {
-        return QStringLiteral("ETS");
-    }
-    if (normalized == QStringLiteral("ts")) {
-        return QStringLiteral("TypeScript");
-    }
-    if (normalized == QStringLiteral("js")) {
-        return QStringLiteral("JavaScript");
-    }
-    if (normalized == QStringLiteral("json")) {
-        return QStringLiteral("JSON");
-    }
-    if (normalized == QStringLiteral("cpp")) {
-        return QStringLiteral("C++");
-    }
-    if (normalized.isEmpty()) {
-        return QStringLiteral("Code");
-    }
-    QString label = normalized;
-    label[0] = label.at(0).toUpper();
-    return label;
 }
 
 bool isPlainTextLanguage(const QString& language)
@@ -94,213 +88,93 @@ bool isPlainTextLanguage(const QString& language)
         || normalized == QStringLiteral("console");
 }
 
-bool isIdentifierStart(QChar ch)
+QString displayLanguage(QString language)
 {
-    return ch.isLetter() || ch == QLatin1Char('_') || ch == QLatin1Char('$');
-}
-
-bool isIdentifierPart(QChar ch)
-{
-    return ch.isLetterOrNumber() || ch == QLatin1Char('_') || ch == QLatin1Char('$');
-}
-
-bool isKeyword(QStringView token)
-{
-    static const QStringList keywords {
-        QStringLiteral("abstract"), QStringLiteral("as"), QStringLiteral("async"),
-        QStringLiteral("await"), QStringLiteral("break"), QStringLiteral("case"),
-        QStringLiteral("catch"), QStringLiteral("class"), QStringLiteral("const"),
-        QStringLiteral("continue"), QStringLiteral("default"), QStringLiteral("delete"),
-        QStringLiteral("do"), QStringLiteral("else"), QStringLiteral("enum"),
-        QStringLiteral("export"), QStringLiteral("extends"), QStringLiteral("false"),
-        QStringLiteral("finally"), QStringLiteral("for"), QStringLiteral("from"),
-        QStringLiteral("function"), QStringLiteral("if"), QStringLiteral("import"),
-        QStringLiteral("in"), QStringLiteral("instanceof"), QStringLiteral("interface"),
-        QStringLiteral("let"), QStringLiteral("namespace"), QStringLiteral("new"),
-        QStringLiteral("nullptr"), QStringLiteral("null"), QStringLiteral("private"),
-        QStringLiteral("protected"), QStringLiteral("public"), QStringLiteral("return"),
-        QStringLiteral("static"), QStringLiteral("struct"), QStringLiteral("super"),
-        QStringLiteral("switch"), QStringLiteral("this"), QStringLiteral("throw"),
-        QStringLiteral("true"), QStringLiteral("try"), QStringLiteral("typedef"),
-        QStringLiteral("typename"), QStringLiteral("typeof"), QStringLiteral("undefined"),
-        QStringLiteral("using"), QStringLiteral("var"), QStringLiteral("void"),
-        QStringLiteral("while"), QStringLiteral("yield")
-    };
-    return keywords.contains(token.toString());
-}
-
-bool isTypeName(QStringView token)
-{
-    static const QStringList types {
-        QStringLiteral("Array"), QStringLiteral("Boolean"), QStringLiteral("Map"),
-        QStringLiteral("Number"), QStringLiteral("Object"), QStringLiteral("Promise"),
-        QStringLiteral("Record"), QStringLiteral("Set"), QStringLiteral("String"),
-        QStringLiteral("auto"), QStringLiteral("any"), QStringLiteral("bigint"),
-        QStringLiteral("bool"), QStringLiteral("boolean"), QStringLiteral("char"),
-        QStringLiteral("double"), QStringLiteral("float"), QStringLiteral("int"),
-        QStringLiteral("long"), QStringLiteral("never"), QStringLiteral("number"),
-        QStringLiteral("object"), QStringLiteral("short"), QStringLiteral("size_t"),
-        QStringLiteral("std"), QStringLiteral("string"), QStringLiteral("symbol"),
-        QStringLiteral("unknown")
-    };
-    return types.contains(token.toString());
-}
-
-QString span(const QString& text, const QColor& color)
-{
-    if (text.isEmpty()) {
-        return {};
+    const QString normalized = normalizedLanguage(std::move(language));
+    if (normalized == QStringLiteral("ts")) {
+        return QStringLiteral("TypeScript");
     }
-    return QStringLiteral("<span style=\"color:%1;\">%2</span>")
-        .arg(color.name(QColor::HexRgb), text.toHtmlEscaped());
-}
-
-QString escapedPlain(QStringView text, int start, int length)
-{
-    return text.mid(start, length).toString().toHtmlEscaped();
-}
-
-QString htmlColor(const QColor& color)
-{
-    return color.name(QColor::HexRgb);
-}
-
-QString monoFontFamily()
-{
-    const QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-    QString family = font.family();
-    if (family.isEmpty()) {
-        family = QStringLiteral("Consolas");
+    if (normalized == QStringLiteral("js")) {
+        return QStringLiteral("JavaScript");
     }
-    return family.replace(QLatin1Char('\''), QStringLiteral("\\'"));
+    if (normalized == QStringLiteral("json")) {
+        return QStringLiteral("JSON");
+    }
+    if (normalized == QStringLiteral("cpp")) {
+        return QStringLiteral("C++");
+    }
+    if (normalized == QStringLiteral("py")) {
+        return QStringLiteral("Python");
+    }
+    if (normalized == QStringLiteral("sh") || normalized == QStringLiteral("bash")) {
+        return QStringLiteral("Shell");
+    }
+    if (normalized == QStringLiteral("cmake")) {
+        return QStringLiteral("CMake");
+    }
+    if (normalized == QStringLiteral("ets")) {
+        return QStringLiteral("ArkTS");
+    }
+    if (isPlainTextLanguage(normalized)) {
+        return QStringLiteral("Text");
+    }
+    if (normalized.isEmpty()) {
+        return QStringLiteral("Code");
+    }
+    QString label = normalized;
+    label[0] = label.at(0).toUpper();
+    return label;
 }
 
-QString htmlTableCodeBlock(
-    const QString& languageLabel,
-    const QString& highlightedCode,
-    const QString& plainCode,
-    bool darkTheme,
-    const CodeTheme& theme)
+bool isSingleLinePlainBlock(const QString& code, const QString& language)
 {
-    const QString border = darkTheme ? QStringLiteral("#2b394b") : QStringLiteral("#d0d7de");
-    const QString headerBackground = darkTheme ? QStringLiteral("#111a26") : QStringLiteral("#f6f8fa");
-    const QString headerText = darkTheme ? QStringLiteral("#9fb0c4") : QStringLiteral("#57606a");
-    const QString codeBackground = darkTheme ? QStringLiteral("#0b111a") : QStringLiteral("#ffffff");
-    const QString codeText = htmlColor(theme.text);
-    const QString fontFamily = monoFontFamily();
-    const QString headerRow = languageLabel.isEmpty()
-        ? QString()
-        : QStringLiteral(
-              "<tr><td bgcolor=\"%1\" style=\"padding:6px 10px; border-bottom:1px solid %2; "
-              "color:%3; font-size:11px; font-family:'Segoe UI', sans-serif;\">%4</td></tr>")
-              .arg(headerBackground,
-                   border,
-                   headerText,
-                   languageLabel.toHtmlEscaped());
+    if (!isPlainTextLanguage(language)) {
+        return false;
+    }
+
+    const QString trimmed = code.trimmed();
+    return !trimmed.isEmpty() && !trimmed.contains(QLatin1Char('\n'));
+}
+
+QString htmlInlineCode(
+    const QString& code,
+    bool darkTheme)
+{
+    const QString background = darkTheme ? QStringLiteral("#0b1118") : QStringLiteral("#edf2f8");
+    const QString border = darkTheme ? QStringLiteral("#2a394d") : QStringLiteral("#d2dbe8");
+    const QString text = darkTheme ? QStringLiteral("#d8e5f5") : QStringLiteral("#172033");
 
     return QStringLiteral(
-        "<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" "
-        "style=\"margin-top:12px; margin-bottom:14px; border:1px solid %1; border-collapse:collapse;\">"
-        "%2"
-        "<tr><td bgcolor=\"%3\" style=\"padding:10px 12px; color:%4; "
-        "font-family:'%6', Consolas, monospace; font-size:12px; line-height:1.48; "
-        "white-space:pre-wrap;\">%5</td></tr>"
-        "</table>")
-        .arg(border,
-             headerRow,
-             codeBackground,
-             codeText,
-             highlightedCode.isEmpty() && !plainCode.isEmpty() ? QStringLiteral("&nbsp;") : highlightedCode,
-             fontFamily);
+        "<span style=\"color:%1; background-color:%2; border:1px solid %3; "
+        "font-family:'%5', Consolas, 'Courier New', monospace; font-size:12px; "
+        "white-space:pre;\">&nbsp;%4&nbsp;</span>")
+        .arg(text,
+             background,
+             border,
+             code.toHtmlEscaped(),
+             QStringLiteral("Cascadia Mono"));
 }
 
-QString highlightedLine(QStringView text, bool* inBlockComment, const CodeTheme& theme)
-{
-    QString html;
-    html.reserve(text.size() * 2);
+constexpr qsizetype kMaxCacheEntries = 96;
 
-    int i = 0;
-    while (i < text.size()) {
-        if (*inBlockComment) {
-            const int start = i;
-            while (i + 1 < text.size()
-                && !(text.at(i) == QLatin1Char('*') && text.at(i + 1) == QLatin1Char('/'))) {
-                ++i;
-            }
-            if (i + 1 >= text.size()) {
-                html += span(text.mid(start).toString(), theme.comment);
-                return html;
-            }
-            i += 2;
-            html += span(text.mid(start, i - start).toString(), theme.comment);
-            *inBlockComment = false;
-            continue;
-        }
-
-        const QChar ch = text.at(i);
-        if (ch == QLatin1Char('/') && i + 1 < text.size()) {
-            const QChar next = text.at(i + 1);
-            if (next == QLatin1Char('/')) {
-                html += span(text.mid(i).toString(), theme.comment);
-                return html;
-            }
-            if (next == QLatin1Char('*')) {
-                *inBlockComment = true;
-                continue;
-            }
-        }
-
-        if (ch == QLatin1Char('"') || ch == QLatin1Char('\'') || ch == QLatin1Char('`')) {
-            const QChar quote = ch;
-            const int start = i++;
-            bool escaped = false;
-            while (i < text.size()) {
-                const QChar current = text.at(i++);
-                if (escaped) {
-                    escaped = false;
-                } else if (current == QLatin1Char('\\')) {
-                    escaped = true;
-                } else if (current == quote) {
-                    break;
-                }
-            }
-            html += span(text.mid(start, i - start).toString(), theme.string);
-            continue;
-        }
-
-        if (ch.isDigit()) {
-            const int start = i++;
-            while (i < text.size()
-                && (text.at(i).isLetterOrNumber() || text.at(i) == QLatin1Char('.')
-                    || text.at(i) == QLatin1Char('_'))) {
-                ++i;
-            }
-            html += span(text.mid(start, i - start).toString(), theme.number);
-            continue;
-        }
-
-        if (isIdentifierStart(ch)) {
-            const int start = i++;
-            while (i < text.size() && isIdentifierPart(text.at(i))) {
-                ++i;
-            }
-            const QStringView token = text.mid(start, i - start);
-            if (isKeyword(token)) {
-                html += span(token.toString(), theme.keyword);
-            } else if (isTypeName(token)) {
-                html += span(token.toString(), theme.type);
-            } else {
-                html += escapedPlain(text, start, i - start);
-            }
-            continue;
-        }
-
-        html += QString(ch).toHtmlEscaped();
-        ++i;
-    }
-
-    return html;
-}
+QString markdownCacheKey(const QString& markdown, bool darkTheme);
+QString extractInlineCode(const QString& line, QVector<MarkdownInlineCode>* inlineCodes);
+QString renderInlineCode(const MarkdownInlineCode& code, bool darkTheme);
+QString markdownStyleSheet(bool darkTheme);
+QString renderMarkdownTextHtml(const QString& markdown, bool darkTheme);
+QString renderInlineMarkdownHtml(const QString& markdown, bool darkTheme);
+QVariantMap renderCodeBlockModel(const QString& code, const QString& language, bool darkTheme);
+QVariantMap renderTableBlockModel(
+    const QStringList& headerCells,
+    const QStringList& separatorCells,
+    const QList<QStringList>& bodyRows,
+    bool darkTheme);
+QVariantList renderMarkdownBlocks(const QString& markdown, bool darkTheme);
+void appendMarkdownTextBlock(QVariantList* blocks, const QStringList& lines, bool darkTheme);
+void appendMarkdownHtmlBlock(QVariantList* blocks, const QStringList& lines, bool darkTheme);
+QStringList splitMarkdownTableRow(const QString& line);
+bool isMarkdownTableSeparator(const QString& line, QStringList* cells = nullptr);
+QString renderTableCellHtml(const QString& markdown, bool darkTheme);
 
 } // namespace
 
@@ -309,62 +183,335 @@ MarkdownRenderer::MarkdownRenderer(QObject* parent)
 {
 }
 
-QString MarkdownRenderer::render(const QString& markdown, bool darkTheme) const
+QVariantList MarkdownRenderer::renderBlocks(const QString& markdown, bool darkTheme) const
 {
-    static constexpr qsizetype kMaxCacheEntries = 96;
+    const QString key = markdownCacheKey(markdown, darkTheme);
+    const auto cached = blockCache_.constFind(key);
+    if (cached != blockCache_.constEnd()) {
+        return cached.value();
+    }
 
+    const QVariantList blocks = renderMarkdownBlocks(markdown, darkTheme);
+    rememberRenderedBlocks(key, blocks);
+    while (blockCacheOrder_.size() > kMaxCacheEntries) {
+        blockCache_.remove(blockCacheOrder_.takeFirst());
+    }
+    return blocks;
+}
+
+int MarkdownRenderer::renderBlocksAsync(const QString& markdown, bool darkTheme)
+{
+    const int requestId = ++nextRequestId_;
+    const QString key = markdownCacheKey(markdown, darkTheme);
+    const auto cached = blockCache_.constFind(key);
+    if (cached != blockCache_.constEnd()) {
+        const QVariantList blocks = cached.value();
+        QMetaObject::invokeMethod(
+            this,
+            [this, requestId, blocks] {
+                emit blocksReady(requestId, blocks);
+            },
+            Qt::QueuedConnection);
+        return requestId;
+    }
+
+    auto* watcher = new QFutureWatcher<QVariantList>(this);
+    connect(
+        watcher,
+        &QFutureWatcher<QVariantList>::finished,
+        this,
+        [this, watcher, requestId, key] {
+            const QVariantList blocks = watcher->result();
+            rememberRenderedBlocks(key, blocks);
+            while (blockCacheOrder_.size() > kMaxCacheEntries) {
+                blockCache_.remove(blockCacheOrder_.takeFirst());
+            }
+            emit blocksReady(requestId, blocks);
+            watcher->deleteLater();
+        });
+    watcher->setFuture(QtConcurrent::run([markdown, darkTheme] {
+        return renderMarkdownBlocks(markdown, darkTheme);
+    }));
+    return requestId;
+}
+
+namespace {
+
+QString markdownCacheKey(const QString& markdown, bool darkTheme)
+{
     QString key;
     key.reserve(markdown.size() + 2);
     key.append(darkTheme ? QLatin1Char('1') : QLatin1Char('0'));
     key.append(QChar(0x1f));
     key.append(markdown);
-    const auto cached = cache_.constFind(key);
-    if (cached != cache_.constEnd()) {
-        return cached.value();
+    return key;
+}
+
+QString renderMarkdownTextHtml(const QString& markdown, bool darkTheme)
+{
+    QVector<MarkdownInlineCode> inlineCodes;
+    QString prepared;
+    prepared.reserve(markdown.size());
+
+    const QStringList lines = markdown.split(QLatin1Char('\n'));
+    for (const QString& line : lines) {
+        prepared += extractInlineCode(line, &inlineCodes);
+        prepared += QLatin1Char('\n');
     }
 
-    QVector<MarkdownCodeBlock> codeBlocks;
-    const QString prepared = prepareMarkdown(markdown, &codeBlocks);
-    if (prepared.trimmed().isEmpty() && codeBlocks.isEmpty()) {
+    if (prepared.trimmed().isEmpty() && inlineCodes.isEmpty()) {
         return {};
     }
 
+#ifdef REARK_HAS_CMARK_GFM
+    cmark_gfm_core_extensions_ensure_registered();
+
+    constexpr int options = CMARK_OPT_DEFAULT
+        | CMARK_OPT_VALIDATE_UTF8
+        | CMARK_OPT_SMART
+        | CMARK_OPT_GITHUB_PRE_LANG
+        | CMARK_OPT_TABLE_PREFER_STYLE_ATTRIBUTES;
+    cmark_parser* parser = cmark_parser_new(options);
+    if (parser != nullptr) {
+        for (const char* extensionName : { "table", "strikethrough", "tasklist", "autolink" }) {
+            if (auto* extension = cmark_find_syntax_extension(extensionName)) {
+                cmark_parser_attach_syntax_extension(parser, extension);
+            }
+        }
+
+        const QByteArray bytes = prepared.toUtf8();
+        cmark_parser_feed(parser, bytes.constData(), static_cast<size_t>(bytes.size()));
+        cmark_node* document = cmark_parser_finish(parser);
+        if (document != nullptr) {
+            char* rendered = cmark_render_html(
+                document,
+                options,
+                cmark_parser_get_syntax_extensions(parser));
+            QString html = rendered != nullptr ? QString::fromUtf8(rendered) : QString();
+            if (rendered != nullptr) {
+                cmark_get_default_mem_allocator()->free(rendered);
+            }
+            cmark_node_free(document);
+            cmark_parser_free(parser);
+            for (const MarkdownInlineCode& code : inlineCodes) {
+                html.replace(code.token, renderInlineCode(code, darkTheme));
+            }
+            return QStringLiteral("<style>%1</style>%2")
+                .arg(markdownStyleSheet(darkTheme), html);
+        }
+        cmark_parser_free(parser);
+    }
+#endif
+
+#ifndef REARK_HAS_CMARK_GFM
     QTextDocument document;
     document.setDocumentMargin(0);
-    document.setDefaultStyleSheet(styleSheet(darkTheme));
+    document.setDefaultStyleSheet(markdownStyleSheet(darkTheme));
     QTextDocument::MarkdownFeatures features = QTextDocument::MarkdownDialectGitHub;
     features.setFlag(QTextDocument::MarkdownNoHTML);
     document.setMarkdown(prepared, features);
     QString html = document.toHtml();
-    for (const MarkdownCodeBlock& block : codeBlocks) {
-        const QString replacement = renderCodeBlock(block, darkTheme);
-        const QRegularExpression paragraphToken(QStringLiteral("<p[^>]*>\\s*%1\\s*</p>")
-                                                    .arg(QRegularExpression::escape(block.token)));
-        html.replace(paragraphToken, replacement);
-        html.replace(block.token, replacement);
+    for (const MarkdownInlineCode& code : inlineCodes) {
+        html.replace(code.token, renderInlineCode(code, darkTheme));
     }
-    rememberRenderedHtml(key, html);
-    while (cacheOrder_.size() > kMaxCacheEntries) {
-        cache_.remove(cacheOrder_.takeFirst());
+    return html;
+#else
+    QString fallback = prepared.toHtmlEscaped();
+    fallback.replace(QLatin1Char('\n'), QStringLiteral("<br/>"));
+    for (const MarkdownInlineCode& code : inlineCodes) {
+        fallback.replace(code.token, renderInlineCode(code, darkTheme));
     }
+    return QStringLiteral("<style>%1</style><p>%2</p>")
+        .arg(markdownStyleSheet(darkTheme), fallback);
+#endif
+}
+
+QString renderInlineMarkdownHtml(const QString& markdown, bool darkTheme)
+{
+    QString html = renderMarkdownTextHtml(markdown, darkTheme).trimmed();
+    static const QRegularExpression stylePrefix(
+        QStringLiteral("^\\s*<style[^>]*>.*?</style>\\s*"),
+        QRegularExpression::DotMatchesEverythingOption);
+    html.remove(stylePrefix);
+
+    static const QRegularExpression paragraphWrapper(
+        QStringLiteral("^\\s*<p>(.*)</p>\\s*$"),
+        QRegularExpression::DotMatchesEverythingOption);
+    const QRegularExpressionMatch paragraphMatch = paragraphWrapper.match(html);
+    if (paragraphMatch.hasMatch()) {
+        html = paragraphMatch.captured(1).trimmed();
+    }
+
+    html.replace(QStringLiteral("\\|"), QStringLiteral("|"));
     return html;
 }
 
-QString MarkdownRenderer::prepareMarkdown(const QString& markdown, QVector<MarkdownCodeBlock>* codeBlocks) const
+QVariantMap renderCodeBlockModel(const QString& code, const QString& language, bool darkTheme)
 {
-    QString output;
-    output.reserve(markdown.size());
+    const QString normalized = normalizedLanguage(language);
+    const QStringList lines = code.split(QLatin1Char('\n'));
 
-    const QStringList lines = markdown.split(QLatin1Char('\n'));
+    QVariantMap block;
+    block.insert(QStringLiteral("type"), QStringLiteral("code"));
+    block.insert(QStringLiteral("language"), normalized);
+    block.insert(QStringLiteral("languageLabel"), displayLanguage(normalized));
+    block.insert(QStringLiteral("code"), code);
+    block.insert(QStringLiteral("compact"), isSingleLinePlainBlock(code, normalized));
+    block.insert(QStringLiteral("lineCount"), std::max(1, int(lines.size())));
+    return block;
+}
+
+QVariantMap renderTableCell(QString markdown, bool darkTheme)
+{
+    QVariantMap cell;
+    const QString plainText = markdown.trimmed();
+    cell.insert(QStringLiteral("text"), plainText);
+    cell.insert(QStringLiteral("html"), renderTableCellHtml(plainText, darkTheme));
+    return cell;
+}
+
+QVariantMap renderTableBlockModel(
+    const QStringList& headerCells,
+    const QStringList& separatorCells,
+    const QList<QStringList>& bodyRows,
+    bool darkTheme)
+{
+    QVariantMap block;
+    block.insert(QStringLiteral("type"), QStringLiteral("table"));
+
+    QVariantList alignments;
+    for (const QString& separator : separatorCells) {
+        const QString trimmed = separator.trimmed();
+        if (trimmed.startsWith(QLatin1Char(':')) && trimmed.endsWith(QLatin1Char(':'))) {
+            alignments.append(QStringLiteral("center"));
+        } else if (trimmed.endsWith(QLatin1Char(':'))) {
+            alignments.append(QStringLiteral("right"));
+        } else {
+            alignments.append(QStringLiteral("left"));
+        }
+    }
+
+    QVariantList headers;
+    for (const QString& cell : headerCells) {
+        headers.append(renderTableCell(cell, darkTheme));
+    }
+
+    QVariantList rows;
+    QVector<int> columnWeights(headerCells.size(), 8);
+    for (int column = 0; column < headerCells.size(); ++column) {
+        columnWeights[column] = std::clamp(static_cast<int>(headerCells.at(column).size()), 8, 36);
+    }
+    for (const QStringList& row : bodyRows) {
+        QVariantList renderedRow;
+        for (int column = 0; column < headerCells.size(); ++column) {
+            const QString cellText = column < row.size() ? row.at(column) : QString();
+            const int cellWeight = std::clamp(static_cast<int>(cellText.size()), 8, 48);
+            columnWeights[column] = std::max(columnWeights.at(column), cellWeight);
+            renderedRow.append(renderTableCell(cellText, darkTheme));
+        }
+        rows.append(renderedRow);
+    }
+
+    QVariantList weights;
+    for (int weight : columnWeights) {
+        weights.append(weight);
+    }
+
+    block.insert(QStringLiteral("headers"), headers);
+    block.insert(QStringLiteral("rows"), rows);
+    block.insert(QStringLiteral("alignments"), alignments);
+    block.insert(QStringLiteral("columnWeights"), weights);
+    block.insert(QStringLiteral("columnCount"), headerCells.size());
+    block.insert(QStringLiteral("rowCount"), bodyRows.size() + 1);
+    return block;
+}
+
+void appendMarkdownHtmlBlock(QVariantList* blocks, const QStringList& lines, bool darkTheme)
+{
+    const QString markdown = lines.join(QLatin1Char('\n')).trimmed();
+    if (markdown.isEmpty()) {
+        return;
+    }
+
+    const QString html = renderMarkdownTextHtml(markdown, darkTheme);
+    if (html.trimmed().isEmpty()) {
+        return;
+    }
+
+    QVariantMap block;
+    block.insert(QStringLiteral("type"), QStringLiteral("html"));
+    block.insert(QStringLiteral("html"), html);
+    blocks->append(block);
+}
+
+void appendMarkdownTextBlock(QVariantList* blocks, const QStringList& lines, bool darkTheme)
+{
+    QStringList pendingHtmlLines;
+    const auto flushPendingHtml = [&] {
+        appendMarkdownHtmlBlock(blocks, pendingHtmlLines, darkTheme);
+        pendingHtmlLines.clear();
+    };
+
+    for (int i = 0; i < lines.size();) {
+        QStringList separatorCells;
+        if (i + 1 < lines.size()
+            && isMarkdownTableSeparator(lines.at(i + 1), &separatorCells)) {
+            const QStringList headerCells = splitMarkdownTableRow(lines.at(i));
+            if (headerCells.size() >= 2
+                && separatorCells.size() >= 2
+                && separatorCells.size() == headerCells.size()) {
+                flushPendingHtml();
+
+                QList<QStringList> bodyRows;
+                int rowIndex = i + 2;
+                while (rowIndex < lines.size()) {
+                    const QString line = lines.at(rowIndex);
+                    if (line.trimmed().isEmpty()) {
+                        break;
+                    }
+                    QStringList rowCells = splitMarkdownTableRow(line);
+                    if (rowCells.size() < 2) {
+                        break;
+                    }
+                    while (rowCells.size() < headerCells.size()) {
+                        rowCells.append(QString());
+                    }
+                    if (rowCells.size() > headerCells.size()) {
+                        rowCells = rowCells.mid(0, headerCells.size());
+                    }
+                    bodyRows.append(rowCells);
+                    ++rowIndex;
+                }
+
+                blocks->append(renderTableBlockModel(headerCells, separatorCells, bodyRows, darkTheme));
+                i = rowIndex;
+                continue;
+            }
+        }
+
+        pendingHtmlLines.append(lines.at(i));
+        ++i;
+    }
+
+    flushPendingHtml();
+}
+
+QVariantList renderMarkdownBlocks(const QString& markdown, bool darkTheme)
+{
+    QVariantList blocks;
+    QStringList textLines;
+    QStringList codeLines;
     bool inFence = false;
     QString fenceMarker;
     QString language;
-    QStringList codeLines;
 
+    const QStringList lines = markdown.split(QLatin1Char('\n'));
     for (const QString& line : lines) {
         QString marker;
         QString info;
         if (!inFence && isFenceLine(line, &marker, &info)) {
+            appendMarkdownTextBlock(&blocks, textLines, darkTheme);
+            textLines.clear();
             inFence = true;
             fenceMarker = marker;
             language = info;
@@ -374,15 +521,7 @@ QString MarkdownRenderer::prepareMarkdown(const QString& markdown, QVector<Markd
 
         if (inFence) {
             if (line.trimmed().startsWith(fenceMarker)) {
-                const QString token = QStringLiteral("REARK_CODE_BLOCK_%1").arg(codeBlocks->size());
-                codeBlocks->append(MarkdownCodeBlock {
-                    token,
-                    normalizedLanguage(language),
-                    codeLines.join(QLatin1Char('\n'))
-                });
-                output += QLatin1Char('\n');
-                output += token;
-                output += QStringLiteral("\n\n");
+                blocks.append(renderCodeBlockModel(codeLines.join(QLatin1Char('\n')), language, darkTheme));
                 inFence = false;
                 fenceMarker.clear();
                 language.clear();
@@ -393,65 +532,139 @@ QString MarkdownRenderer::prepareMarkdown(const QString& markdown, QVector<Markd
             continue;
         }
 
-        output += line;
-        output += QLatin1Char('\n');
+        textLines.append(line);
     }
 
     if (inFence) {
-        output += fenceMarker;
-        if (!language.isEmpty()) {
-            output += QLatin1Char(' ');
-            output += language;
-        }
-        output += QLatin1Char('\n');
-        output += codeLines.join(QLatin1Char('\n'));
+        textLines.append(fenceMarker + (language.isEmpty() ? QString() : QStringLiteral(" ") + language));
+        textLines.append(codeLines);
     }
+    appendMarkdownTextBlock(&blocks, textLines, darkTheme);
+    return blocks;
+}
 
-    static const QRegularExpression imageWithUrl(
-        QStringLiteral("!\\[([^\\]]*)\\]\\(([^\\)\\s]+)(?:\\s+\"[^\"]*\")?\\)"));
-    output.replace(imageWithUrl, QStringLiteral("[\\1](\\2)"));
+QString extractInlineCode(const QString& line, QVector<MarkdownInlineCode>* inlineCodes)
+{
+    QString output;
+    output.reserve(line.size());
 
-    static const QRegularExpression referenceImage(
-        QStringLiteral("!\\[([^\\]]*)\\]\\[[^\\]]*\\]"));
-    output.replace(referenceImage, QStringLiteral("\\1"));
+    int i = 0;
+    while (i < line.size()) {
+        const int start = line.indexOf(QLatin1Char('`'), i);
+        if (start < 0) {
+            output += line.mid(i);
+            break;
+        }
+
+        int ticks = 0;
+        while (start + ticks < line.size() && line.at(start + ticks) == QLatin1Char('`')) {
+            ++ticks;
+        }
+        if (ticks <= 0) {
+            output += line.mid(i);
+            break;
+        }
+
+        const QString marker(ticks, QLatin1Char('`'));
+        const int end = line.indexOf(marker, start + ticks);
+        if (end < 0) {
+            output += line.mid(i);
+            break;
+        }
+
+        const QString code = line.mid(start + ticks, end - start - ticks);
+        if (code.isEmpty()) {
+            output += line.mid(i, end + ticks - i);
+            i = end + ticks;
+            continue;
+        }
+
+        const QString token = QStringLiteral("REARKINLINECODE%1").arg(inlineCodes->size());
+        inlineCodes->append(MarkdownInlineCode { token, code });
+        output += line.mid(i, start - i);
+        output += token;
+        i = end + ticks;
+    }
 
     return output;
 }
 
-QString MarkdownRenderer::renderCodeBlock(const MarkdownCodeBlock& block, bool darkTheme) const
+QString renderInlineCode(const MarkdownInlineCode& code, bool darkTheme)
 {
-    const CodeTheme theme = codeThemeForId(darkTheme ? QStringLiteral("GitHub Dark") : QStringLiteral("GitHub Light"), darkTheme);
-    return htmlTableCodeBlock(
-        displayLanguage(block.language),
-        highlightCode(block.code, block.language, darkTheme),
-        block.code,
-        darkTheme,
-        theme);
+    return htmlInlineCode(code.code, darkTheme);
 }
 
-QString MarkdownRenderer::highlightCode(const QString& code, const QString& language, bool darkTheme) const
+QStringList splitMarkdownTableRow(const QString& line)
 {
-    const CodeTheme theme = codeThemeForId(darkTheme ? QStringLiteral("GitHub Dark") : QStringLiteral("GitHub Light"), darkTheme);
-    if (isPlainTextLanguage(language)) {
-        return code.toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br/>"));
+    QString trimmed = line.trimmed();
+    if (trimmed.startsWith(QLatin1Char('|'))) {
+        trimmed.remove(0, 1);
+    }
+    if (trimmed.endsWith(QLatin1Char('|'))) {
+        trimmed.chop(1);
     }
 
-    QString html;
-    html.reserve(code.size() * 2);
-
-    bool inBlockComment = false;
-    const QStringList lines = code.split(QLatin1Char('\n'));
-    for (int i = 0; i < lines.size(); ++i) {
-        html += highlightedLine(QStringView(lines.at(i)), &inBlockComment, theme);
-        if (i + 1 < lines.size()) {
-            html += QStringLiteral("<br/>");
+    QStringList cells;
+    QString current;
+    bool escaped = false;
+    bool inCode = false;
+    for (QChar ch : trimmed) {
+        if (escaped) {
+            current.append(ch);
+            escaped = false;
+            continue;
         }
+        if (ch == QLatin1Char('\\')) {
+            escaped = true;
+            continue;
+        }
+        if (ch == QLatin1Char('`')) {
+            inCode = !inCode;
+            current.append(ch);
+            continue;
+        }
+        if (ch == QLatin1Char('|') && !inCode) {
+            cells.append(current.trimmed());
+            current.clear();
+            continue;
+        }
+        current.append(ch);
     }
-
-    return html;
+    cells.append(current.trimmed());
+    return cells;
 }
 
-QString MarkdownRenderer::styleSheet(bool darkTheme) const
+bool isMarkdownTableSeparatorCell(const QString& cell)
+{
+    const QString trimmed = cell.trimmed();
+    if (trimmed.size() < 3) {
+        return false;
+    }
+    static const QRegularExpression separatorPattern(QStringLiteral("^:?-{3,}:?$"));
+    return separatorPattern.match(trimmed).hasMatch();
+}
+
+bool isMarkdownTableSeparator(const QString& line, QStringList* cells)
+{
+    const QStringList parsedCells = splitMarkdownTableRow(line);
+    if (parsedCells.size() < 2) {
+        return false;
+    }
+    if (!std::ranges::all_of(parsedCells, isMarkdownTableSeparatorCell)) {
+        return false;
+    }
+    if (cells != nullptr) {
+        *cells = parsedCells;
+    }
+    return true;
+}
+
+QString renderTableCellHtml(const QString& markdown, bool darkTheme)
+{
+    return renderInlineMarkdownHtml(markdown, darkTheme);
+}
+
+QString markdownStyleSheet(bool darkTheme)
 {
     const QString text = darkTheme ? QStringLiteral("#eef5ff") : QStringLiteral("#0f172a");
     const QString muted = darkTheme ? QStringLiteral("#98a7bb") : QStringLiteral("#64748b");
@@ -558,11 +771,13 @@ th {
 )").arg(text, muted, link, codeText, codeBackground, codeBorder, quoteBorder, quoteBackground);
 }
 
-void MarkdownRenderer::rememberRenderedHtml(const QString& key, const QString& html) const
+} // namespace
+
+void MarkdownRenderer::rememberRenderedBlocks(const QString& key, const QVariantList& blocks) const
 {
-    if (cache_.contains(key)) {
+    if (blockCache_.contains(key)) {
         return;
     }
-    cache_.insert(key, html);
-    cacheOrder_.append(key);
+    blockCache_.insert(key, blocks);
+    blockCacheOrder_.append(key);
 }
