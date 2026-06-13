@@ -409,7 +409,7 @@ QVariantMap renderTableBlockModel(
             columnWeights[column] = std::max(columnWeights.at(column), cellWeight);
             renderedRow.append(renderTableCell(cellText, darkTheme));
         }
-        rows.append(renderedRow);
+        rows.append(QVariant::fromValue(renderedRow));
     }
 
     QVariantList weights;
