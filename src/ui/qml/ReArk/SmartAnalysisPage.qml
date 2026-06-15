@@ -43,24 +43,24 @@ Rectangle {
             && !referenceBusy
             && draftText.trim().length > 0
 
-    readonly property color pageTopColor: darkTheme ? "#111923" : "#e8f0fb"
-    readonly property color pageBottomColor: darkTheme ? "#0d121a" : "#f4f8fc"
-    readonly property color panelColor: darkTheme ? "#151d28" : "#fbfcff"
-    readonly property color userBubbleColor: darkTheme ? "#24405f" : "#dbeafe"
-    readonly property color assistantBubbleColor: darkTheme ? "#151d28" : "#ffffff"
-    readonly property color primaryTextColor: darkTheme ? "#eef5ff" : "#0f172a"
-    readonly property color secondaryTextColor: darkTheme ? "#98a7bb" : "#748094"
-    readonly property color mutedTextColor: darkTheme ? "#718095" : "#8a96a8"
-    readonly property color borderColor: darkTheme ? "#2c3848" : "#d3dce9"
-    readonly property color iconColor: darkTheme ? "#cbd8ea" : "#14213d"
-    readonly property color accentColor: darkTheme ? "#6f8cff" : "#5d83f4"
-    readonly property color accentHoverColor: darkTheme ? "#809aff" : "#4e74e4"
-    readonly property color accentPressedColor: darkTheme ? "#5874e7" : "#446bdd"
-    readonly property color newChatColor: darkTheme ? "#182231" : "#f8fbff"
-    readonly property color newChatHoverColor: darkTheme ? "#202c3d" : "#ffffff"
-    readonly property color newChatBorderColor: darkTheme ? "#344255" : "#d7e0ed"
-    readonly property real panelShadowOpacity: darkTheme ? 0.28 : 0.13
-    readonly property real buttonShadowOpacity: darkTheme ? 0.22 : 0.1
+    readonly property color pageTopColor: darkTheme ? "#1e1e1e" : "#e8f0fb"
+    readonly property color pageBottomColor: darkTheme ? "#171819" : "#f4f8fc"
+    readonly property color panelColor: darkTheme ? "#1b1d20" : "#fbfcff"
+    readonly property color userBubbleColor: darkTheme ? "#1f4d78" : "#dbeafe"
+    readonly property color assistantBubbleColor: darkTheme ? "#1b1d20" : "#ffffff"
+    readonly property color primaryTextColor: darkTheme ? "#e7e7e7" : "#0f172a"
+    readonly property color secondaryTextColor: darkTheme ? "#a6a6a6" : "#748094"
+    readonly property color mutedTextColor: darkTheme ? "#858b92" : "#8a96a8"
+    readonly property color borderColor: darkTheme ? "#34383d" : "#d3dce9"
+    readonly property color iconColor: darkTheme ? "#c5cad0" : "#14213d"
+    readonly property color accentColor: darkTheme ? "#3f8fd2" : "#5d83f4"
+    readonly property color accentHoverColor: darkTheme ? "#52a0df" : "#4e74e4"
+    readonly property color accentPressedColor: darkTheme ? "#3379b6" : "#446bdd"
+    readonly property color newChatColor: darkTheme ? "#202226" : "#f8fbff"
+    readonly property color newChatHoverColor: darkTheme ? "#282b30" : "#ffffff"
+    readonly property color newChatBorderColor: darkTheme ? "#3a4047" : "#d7e0ed"
+    readonly property real panelShadowOpacity: darkTheme ? 0.18 : 0.13
+    readonly property real buttonShadowOpacity: darkTheme ? 0.14 : 0.1
     readonly property int contentGutter: width < 720 ? 18 : (width < 1080 ? 72 : 132)
     readonly property int contentWidth: Math.max(280, Math.min(930, width - contentGutter * 2))
 
@@ -370,9 +370,9 @@ Rectangle {
                         background: Rectangle {
                             radius: 4
                             color: messageDelegate.copied
-                                ? (root.darkTheme ? "#263952" : "#dbeafe")
+                                ? (root.darkTheme ? "#243546" : "#dbeafe")
                                 : copyButton.hovered
-                                ? (root.darkTheme ? "#202b3a" : "#e7edf7")
+                                ? (root.darkTheme ? "#292d32" : "#e7edf7")
                                 : "transparent"
                         }
 
@@ -514,11 +514,11 @@ Rectangle {
                     height: 24
                     width: Math.min(230, chipText.implicitWidth + 54)
                     radius: height / 2
-                    color: root.darkTheme ? "#1d2a3a" : "#edf4ff"
+                    color: root.darkTheme ? "#24272c" : "#edf4ff"
                     border.width: 1
                     border.color: modelData.state === "failed"
                                   ? "#ef6f75"
-                                  : (root.darkTheme ? "#33445c" : "#cbd8ee")
+                                  : (root.darkTheme ? "#3b4149" : "#cbd8ee")
                     ToolTip.text: modelData.error || ""
                     ToolTip.visible: chipHover.hovered && ToolTip.text.length > 0
                     ToolTip.delay: 350
@@ -562,7 +562,7 @@ Rectangle {
                         background: Rectangle {
                             radius: 7
                             color: removeReferenceButton.hovered
-                                   ? (root.darkTheme ? "#26384d" : "#dbe7fb")
+                                   ? (root.darkTheme ? "#30343a" : "#dbe7fb")
                                    : "transparent"
                         }
                         onClicked: {
@@ -627,7 +627,7 @@ Rectangle {
                 background: Rectangle {
                     radius: 4
                     color: referenceButton.hovered
-                           ? (root.darkTheme ? "#202b3a" : "#e7edf7")
+                           ? (root.darkTheme ? "#292d32" : "#e7edf7")
                            : "transparent"
                 }
 
@@ -738,15 +738,15 @@ Rectangle {
 
         background: Rectangle {
             radius: 10
-            color: root.darkTheme ? "#111923" : "#fbfcff"
+            color: root.darkTheme ? "#1b1d20" : "#fbfcff"
             border.width: 1
-            border.color: root.darkTheme ? "#344255" : "#ccd7e6"
+            border.color: root.darkTheme ? "#3a4047" : "#ccd7e6"
             layer.enabled: true
             layer.effect: MultiEffect {
                 shadowEnabled: true
                 shadowBlur: 0.55
                 shadowColor: "#000000"
-                shadowOpacity: root.darkTheme ? 0.34 : 0.16
+                shadowOpacity: root.darkTheme ? 0.24 : 0.16
                 shadowVerticalOffset: 14
             }
         }
@@ -754,7 +754,7 @@ Rectangle {
         header: Rectangle {
             implicitHeight: 60
             radius: 10
-            color: root.darkTheme ? "#151f2d" : "#f6f8fc"
+            color: root.darkTheme ? "#202226" : "#f6f8fc"
 
             Rectangle {
                 anchors.left: parent.left
@@ -811,7 +811,7 @@ Rectangle {
                     background: Rectangle {
                         radius: 6
                         color: parent.hovered
-                               ? (root.darkTheme ? "#223047" : "#edf3fb")
+                               ? (root.darkTheme ? "#2a2e34" : "#edf3fb")
                                : "transparent"
                     }
                 }
@@ -836,10 +836,10 @@ Rectangle {
                         height: 34
                         radius: 6
                         color: root.detailsTabIndex === index
-                               ? (root.darkTheme ? "#223047" : "#e8f0ff")
+                               ? (root.darkTheme ? "#2a3038" : "#e8f0ff")
                                : "transparent"
                         border.width: root.detailsTabIndex === index ? 1 : 0
-                        border.color: root.darkTheme ? "#3b4b62" : "#c9d7ee"
+                        border.color: root.darkTheme ? "#414851" : "#c9d7ee"
 
                         Label {
                             id: tabLabel
@@ -888,9 +888,9 @@ Rectangle {
                     font.pixelSize: 12
                     background: Rectangle {
                         radius: 6
-                        color: root.darkTheme ? "#0d141f" : "#f7f9fd"
+                        color: root.darkTheme ? "#17191c" : "#f7f9fd"
                         border.width: 1
-                        border.color: root.darkTheme ? "#2e3d50" : "#d6e0ee"
+                        border.color: root.darkTheme ? "#34383d" : "#d6e0ee"
                     }
                 }
             }
@@ -898,7 +898,7 @@ Rectangle {
 
         footer: Rectangle {
             implicitHeight: 64
-            color: root.darkTheme ? "#111923" : "#fbfcff"
+            color: root.darkTheme ? "#1b1d20" : "#fbfcff"
             radius: 10
 
             Rectangle {
@@ -948,7 +948,7 @@ Rectangle {
                     background: Rectangle {
                         radius: 7
                         color: !parent.enabled
-                               ? (root.darkTheme ? "#1b2534" : "#e7edf6")
+                               ? (root.darkTheme ? "#25282d" : "#e7edf6")
                                : (parent.hovered ? root.accentHoverColor : root.accentColor)
                     }
                 }
@@ -970,7 +970,7 @@ Rectangle {
                     background: Rectangle {
                         radius: 7
                         color: parent.hovered
-                               ? (root.darkTheme ? "#223047" : "#edf3fb")
+                               ? (root.darkTheme ? "#2a2e34" : "#edf3fb")
                                : "transparent"
                         border.width: 1
                         border.color: root.borderColor

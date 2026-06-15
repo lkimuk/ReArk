@@ -10,12 +10,12 @@ Rectangle {
     property string sourceUrl: ""
     property string fileName: ""
     readonly property bool darkTheme: Material.theme === Material.Dark
-    readonly property color backgroundColor: darkTheme ? "#111419" : "#f5f7f8"
-    readonly property color panelColor: darkTheme ? "#171d24" : "#ffffff"
-    readonly property color dividerColor: darkTheme ? "#2f3741" : "#cfd8de"
-    readonly property color secondaryTextColor: darkTheme ? "#aab2bd" : "#5f6872"
-    readonly property color mediaAccentColor: darkTheme ? "#7fcac3" : "#318a83"
-    readonly property color mediaIconPanelColor: darkTheme ? "#18242c" : "#e9f3f1"
+    readonly property color backgroundColor: darkTheme ? "#171819" : "#f5f7f8"
+    readonly property color panelColor: darkTheme ? "#1b1d20" : "#ffffff"
+    readonly property color dividerColor: darkTheme ? "#34383d" : "#cfd8de"
+    readonly property color secondaryTextColor: darkTheme ? "#a6a6a6" : "#5f6872"
+    readonly property color mediaAccentColor: darkTheme ? "#3f8fd2" : "#2f80c1"
+    readonly property color mediaIconPanelColor: darkTheme ? "#202226" : "#e9f3f1"
     readonly property bool audioFile: isAudioFile(fileName.length > 0 ? fileName : sourceUrl)
 
     color: backgroundColor
@@ -99,7 +99,7 @@ Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
                     color: root.mediaIconPanelColor
                     border.width: 1
-                    border.color: root.darkTheme ? "#2c3b45" : "#d0dfdc"
+                    border.color: root.darkTheme ? "#34383d" : "#d0dfdc"
 
                     Canvas {
                         id: audioIconCanvas

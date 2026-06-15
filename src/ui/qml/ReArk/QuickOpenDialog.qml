@@ -26,10 +26,10 @@ Popup {
     }
 
     background: Rectangle {
-        color: root.darkTheme ? "#1c2027" : "#ffffff"
+        color: root.darkTheme ? "#1b1d20" : "#ffffff"
         radius: 6
         border.width: 1
-        border.color: root.darkTheme ? "#4a515d" : "#cbd4d9"
+        border.color: root.darkTheme ? "#34383d" : "#cbd4d9"
     }
 
     contentItem: ColumnLayout {
@@ -72,7 +72,7 @@ Popup {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: root.darkTheme ? "#343a45" : "#dce3e7"
+            color: root.darkTheme ? "#34383d" : "#dce3e7"
         }
 
         ListView {
@@ -94,8 +94,8 @@ Popup {
                 hoverEnabled: true
                 background: Rectangle {
                     color: row.highlighted
-                           ? (root.darkTheme ? "#33424a" : "#d6e8e7")
-                           : row.hovered ? (root.darkTheme ? "#2b313a" : "#e8eef0") : "transparent"
+                           ? (root.darkTheme ? "#2a3038" : "#d6e8e7")
+                           : row.hovered ? (root.darkTheme ? "#282b30" : "#e8eef0") : "transparent"
                 }
                 contentItem: RowLayout {
                     spacing: 8

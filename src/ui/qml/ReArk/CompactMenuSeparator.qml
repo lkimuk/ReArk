@@ -16,7 +16,7 @@ MenuSeparator {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             height: 1
-            color: root.darkTheme ? "#575757" : "#d7dde2"
+            color: root.darkTheme ? "#34383d" : "#d7dde2"
         }
     }
 }

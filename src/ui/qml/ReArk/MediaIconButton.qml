@@ -10,8 +10,8 @@ ToolButton {
     readonly property color iconColor: enabled
                                       ? Material.foreground
                                       : (darkTheme ? "#68727d" : "#9aa4ad")
-    readonly property color hoverColor: darkTheme ? "#2b313a" : "#e4eaed"
-    readonly property color checkedColor: darkTheme ? "#33424a" : "#d6e8e7"
+    readonly property color hoverColor: darkTheme ? "#282b30" : "#e4eaed"
+    readonly property color checkedColor: darkTheme ? "#2a3038" : "#d6e8e7"
 
     implicitWidth: 34
     implicitHeight: 34

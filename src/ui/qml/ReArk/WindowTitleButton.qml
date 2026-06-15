@@ -26,10 +26,10 @@ ToolButton {
     }
     readonly property color iconColor: root.hovered && root.buttonType === "close"
                                       ? "#ffffff"
-                                      : (root.darkTheme ? (root.aiButton ? "#8fded8" : "#d9dde3") : (root.aiButton ? "#006b67" : "#202020"))
+                                      : (root.darkTheme ? (root.aiButton ? "#52a0df" : "#d9dde3") : (root.aiButton ? "#2f80c1" : "#202020"))
     readonly property color hoverColor: root.buttonType === "close"
                                       ? "#c42b1c"
-                                      : (root.darkTheme ? "#555555" : "#e5e5e5")
+                                      : (root.darkTheme ? "#282b30" : "#e5e5e5")
 
     implicitWidth: 46
     implicitHeight: 32
@@ -37,7 +37,7 @@ ToolButton {
     padding: 0
 
     background: Rectangle {
-        color: root.active ? (root.darkTheme ? "#40545a" : "#dceeed")
+        color: root.active ? (root.darkTheme ? "#243546" : "#dceeed")
                            : root.hovered ? root.hoverColor : "transparent"
     }
 

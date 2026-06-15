@@ -65,8 +65,9 @@ Menu {
 
     background: Rectangle {
         implicitWidth: root.minimumItemWidth
-        color: root.darkTheme ? "#3f3f3f" : "#ffffff"
+        color: root.darkTheme ? "#202226" : "#ffffff"
         radius: 3
-        border.width: 0
+        border.width: 1
+        border.color: root.darkTheme ? "#34383d" : "#d7dde2"
     }
 }

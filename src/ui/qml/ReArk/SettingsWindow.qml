@@ -23,7 +23,7 @@ ApplicationWindow {
                                       : currentTheme === "dark"
 
     Material.theme: darkTheme ? Material.Dark : Material.Light
-    Material.accent: Material.Teal
+    Material.accent: "#3f8fd2"
     onClosing: {
         if (closeCallback) {
             closeCallback()

@@ -7,8 +7,8 @@ Rectangle {
     Layout.fillWidth: true
     Layout.preferredHeight: 92
     radius: 6
-    color: Material.theme === Material.Dark ? "#262b33" : "#eef3f4"
-    border.color: Material.theme === Material.Dark ? "#3a404a" : "#d5dcdf"
+    color: Material.theme === Material.Dark ? "#202226" : "#eef3f4"
+    border.color: Material.theme === Material.Dark ? "#34383d" : "#d5dcdf"
 
     property string title: ""
     property string value: ""
@@ -20,7 +20,7 @@ Rectangle {
 
         Label {
             text: title
-            color: Material.theme === Material.Dark ? "#aab2bd" : "#5f6872"
+            color: Material.theme === Material.Dark ? "#a6a6a6" : "#5f6872"
             font.pixelSize: 12
             Layout.fillWidth: true
             elide: Text.ElideRight

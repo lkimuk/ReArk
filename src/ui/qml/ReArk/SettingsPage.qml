@@ -10,18 +10,18 @@ Rectangle {
 
     readonly property bool darkTheme: Material.theme === Material.Dark
     readonly property color pageColor: darkTheme ? "#1e1e1e" : "#f3f3f3"
-    readonly property color sidebarColor: darkTheme ? "#181818" : "#f8f8f8"
-    readonly property color rowHoverColor: darkTheme ? "#2a2d2e" : "#e8e8e8"
-    readonly property color rowSelectedColor: darkTheme ? "#37373d" : "#e4e6f1"
-    readonly property color primaryTextColor: darkTheme ? "#cccccc" : "#1f1f1f"
+    readonly property color sidebarColor: darkTheme ? "#1b1d20" : "#f8f8f8"
+    readonly property color rowHoverColor: darkTheme ? "#282b30" : "#e8e8e8"
+    readonly property color rowSelectedColor: darkTheme ? "#2a3038" : "#e4e6f1"
+    readonly property color primaryTextColor: darkTheme ? "#d8d8d8" : "#1f1f1f"
     readonly property color titleTextColor: darkTheme ? "#e7e7e7" : "#1f1f1f"
     readonly property color secondaryTextColor: darkTheme ? "#a6a6a6" : "#5f5f5f"
     readonly property color subtleTextColor: darkTheme ? "#8a8a8a" : "#6f6f6f"
-    readonly property color borderColor: darkTheme ? "#3c3c3c" : "#d0d0d0"
-    readonly property color inputColor: darkTheme ? "#2b2b2b" : "#ffffff"
-    readonly property color inputFocusColor: darkTheme ? "#007fd4" : "#006ab1"
-    readonly property color buttonColor: darkTheme ? "#0e639c" : "#007acc"
-    readonly property color buttonHoverColor: darkTheme ? "#1177bb" : "#0062a3"
+    readonly property color borderColor: darkTheme ? "#34383d" : "#d0d0d0"
+    readonly property color inputColor: darkTheme ? "#202226" : "#ffffff"
+    readonly property color inputFocusColor: darkTheme ? "#3f8fd2" : "#2f80c1"
+    readonly property color buttonColor: darkTheme ? "#3f8fd2" : "#2f80c1"
+    readonly property color buttonHoverColor: darkTheme ? "#52a0df" : "#2b72ad"
     readonly property color dangerTextColor: darkTheme ? "#f48771" : "#a1260d"
 
     property bool showApiKey: false
@@ -67,7 +67,7 @@ Rectangle {
                 anchors.rightMargin: 26
                 height: 28
                 radius: 2
-                color: root.darkTheme ? "#2b2b2b" : "#ffffff"
+                color: root.inputColor
                 border.width: 1
                 border.color: searchInput.activeFocus ? root.inputFocusColor : root.borderColor
 

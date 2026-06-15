@@ -14,13 +14,13 @@ Rectangle {
     property string highlightTheme: "GitHub Dark"
     readonly property bool hasPackage: decompilerController.hasPackage
     readonly property bool darkTheme: Material.theme === Material.Dark
-    readonly property color pageColor: darkTheme ? "#171a1f" : "#f5f7f8"
-    readonly property color sidebarColor: darkTheme ? "#20242b" : "#ffffff"
-    readonly property color editorColor: darkTheme ? "#111419" : "#ffffff"
-    readonly property color dividerColor: darkTheme ? "#3a404a" : "#d5dcdf"
-    readonly property color hoverColor: darkTheme ? "#2b313a" : "#e8eef0"
-    readonly property color selectedColor: darkTheme ? "#33424a" : "#d6e8e7"
-    readonly property color secondaryTextColor: darkTheme ? "#aab2bd" : "#5f6872"
+    readonly property color pageColor: darkTheme ? "#1e1e1e" : "#f5f7f8"
+    readonly property color sidebarColor: darkTheme ? "#202226" : "#ffffff"
+    readonly property color editorColor: darkTheme ? "#171819" : "#ffffff"
+    readonly property color dividerColor: darkTheme ? "#34383d" : "#d5dcdf"
+    readonly property color hoverColor: darkTheme ? "#282b30" : "#e8eef0"
+    readonly property color selectedColor: darkTheme ? "#2a3038" : "#d6e8e7"
+    readonly property color secondaryTextColor: darkTheme ? "#a6a6a6" : "#5f6872"
     readonly property string activeKind: decompilerController.tabsModel.activeKind
     readonly property bool activeIsText: decompilerController.tabsModel.hasTabs
                                          && decompilerController.tabsModel.activeContentMode === "text"
@@ -176,7 +176,7 @@ Rectangle {
                     Layout.leftMargin: 12
                     Layout.rightMargin: 12
                     Layout.preferredHeight: 1
-                    color: darkTheme ? "#29313b" : "#e0e7eb"
+                    color: dividerColor
                 }
 
                 ListView {
@@ -281,7 +281,7 @@ Rectangle {
                         contentItem: Rectangle {
                             implicitWidth: 6
                             radius: width / 2
-                            color: root.darkTheme ? "#6f7b8b" : "#9aa8b5"
+                            color: root.darkTheme ? "#747b84" : "#9aa8b5"
                             opacity: fileTreeScrollBar.active ? 0.82 : 0.45
 
                             Behavior on opacity {
@@ -310,7 +310,7 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: decompilerController.tabsModel.hasTabs ? 36 : 0
                 visible: decompilerController.tabsModel.hasTabs
-                color: darkTheme ? "#171a1f" : "#eef2f4"
+                color: darkTheme ? "#1b1d20" : "#eef2f4"
                 clip: true
 
                 ListView {
@@ -327,7 +327,7 @@ Rectangle {
 
                         width: Math.min(220, Math.max(136, tabTitle.implicitWidth + 52))
                         height: openTabs.height
-                        color: model.active ? editorColor : (darkTheme ? "#20242b" : "#e4eaed")
+                        color: model.active ? editorColor : (darkTheme ? "#202226" : "#e4eaed")
                         ToolTip.text: model.path.length > 0 ? model.path : model.name
                         ToolTip.visible: tabMouse.containsMouse && !tabMenu.visible
                         ToolTip.delay: 500
@@ -337,7 +337,7 @@ Rectangle {
                             anchors.right: parent.right
                             anchors.top: parent.top
                             height: 2
-                            color: model.active ? "#4aa3ff" : "transparent"
+                            color: model.active ? "#3f8fd2" : "transparent"
                         }
 
                         Rectangle {
@@ -369,7 +369,7 @@ Rectangle {
                             height: 28
                             radius: 4
                             color: closeMouse.containsMouse
-                                   ? (darkTheme ? "#3a4048" : "#ccd5da")
+                                   ? (darkTheme ? "#34383d" : "#ccd5da")
                                    : "transparent"
                             ToolTip.text: qsTr("Close")
                             ToolTip.visible: closeMouse.containsMouse
@@ -584,7 +584,7 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: root.fileToolsVisible ? 30 : 0
                         visible: root.fileToolsVisible
-                        color: darkTheme ? "#171a1f" : "#eef2f4"
+                        color: darkTheme ? "#1b1d20" : "#eef2f4"
                         border.width: 1
                         border.color: dividerColor
                         clip: true

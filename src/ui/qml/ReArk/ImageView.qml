@@ -8,10 +8,10 @@ Rectangle {
 
     property string sourceData: ""
     readonly property bool darkTheme: Material.theme === Material.Dark
-    readonly property color backgroundColor: darkTheme ? "#111419" : "#f5f7f8"
-    readonly property color checkerA: darkTheme ? "#20242b" : "#e4eaed"
-    readonly property color checkerB: darkTheme ? "#171a1f" : "#f8fafb"
-    readonly property color borderColor: darkTheme ? "#3a404a" : "#cfd8de"
+    readonly property color backgroundColor: darkTheme ? "#171819" : "#f5f7f8"
+    readonly property color checkerA: darkTheme ? "#202226" : "#e4eaed"
+    readonly property color checkerB: darkTheme ? "#1b1d20" : "#f8fafb"
+    readonly property color borderColor: darkTheme ? "#34383d" : "#cfd8de"
 
     color: backgroundColor
 

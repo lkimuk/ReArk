@@ -25,14 +25,14 @@ ApplicationWindow {
     readonly property bool darkTheme: currentTheme === "system"
                                       ? Qt.styleHints.colorScheme === Qt.Dark
                                       : currentTheme === "dark"
-    readonly property color backgroundColor: darkTheme ? "#15171d" : "#ffffff"
-    readonly property color panelColor: darkTheme ? "#1c2027" : "#f5f7f8"
-    readonly property color dividerColor: darkTheme ? "#3a404a" : "#d5dcdf"
-    readonly property color secondaryTextColor: darkTheme ? "#aab2bd" : "#5f6872"
+    readonly property color backgroundColor: darkTheme ? "#1e1e1e" : "#ffffff"
+    readonly property color panelColor: darkTheme ? "#202226" : "#f5f7f8"
+    readonly property color dividerColor: darkTheme ? "#34383d" : "#d5dcdf"
+    readonly property color secondaryTextColor: darkTheme ? "#a6a6a6" : "#5f6872"
 
     color: backgroundColor
     Material.theme: darkTheme ? Material.Dark : Material.Light
-    Material.accent: Material.Teal
+    Material.accent: "#3f8fd2"
     onClosing: {
         if (closeCallback) {
             closeCallback()

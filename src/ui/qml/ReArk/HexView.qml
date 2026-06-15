@@ -9,15 +9,15 @@ Rectangle {
 
     property var hexModel: null
     readonly property bool darkTheme: Material.theme === Material.Dark
-    readonly property color backgroundColor: "#0f1318"
-    readonly property color alternateRowColor: "#111820"
-    readonly property color headerColor: "#161c23"
-    readonly property color dividerColor: "#2f3741"
-    readonly property color addressColor: "#7ab7ff"
-    readonly property color byteColor: "#d7e0ea"
-    readonly property color mutedByteColor: "#66707b"
-    readonly property color asciiColor: "#c8d1dc"
-    readonly property color cellHoverColor: "#25313b"
+    readonly property color backgroundColor: "#171819"
+    readonly property color alternateRowColor: "#1b1d20"
+    readonly property color headerColor: "#202226"
+    readonly property color dividerColor: "#34383d"
+    readonly property color addressColor: "#3f8fd2"
+    readonly property color byteColor: "#e7e7e7"
+    readonly property color mutedByteColor: "#747b84"
+    readonly property color asciiColor: "#b8bec5"
+    readonly property color cellHoverColor: "#282b30"
     readonly property int rowHeight: 22
     readonly property int addressWidth: 92
     readonly property int byteWidth: 34

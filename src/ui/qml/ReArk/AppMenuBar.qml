@@ -27,7 +27,7 @@ Rectangle {
     implicitWidth: menuRow.implicitWidth
     implicitHeight: embedded ? 32 : 30
     height: implicitHeight
-    color: embedded ? "transparent" : (darkTheme ? "#3f3f3f" : "#f3f3f3")
+    color: embedded ? "transparent" : (darkTheme ? "#1b1d20" : "#f3f3f3")
 
     function showMenu(source, menu, toggle) {
         if (toggle && menu.visible) {

@@ -5,7 +5,7 @@ Item {
     id: root
 
     property string name: ""
-    property color color: "#1f3354"
+    property color color: "#3f8fd2"
     property real strokeWidth: 0
     property bool filled: false
 

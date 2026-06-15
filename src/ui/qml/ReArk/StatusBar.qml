@@ -5,12 +5,12 @@ import QtQuick.Layouts
 
 Rectangle {
     height: 30
-    color: Material.background
+    color: Material.theme === Material.Dark ? "#1b1d20" : Material.background
 
     property string filePath: ""
     property string version: ""
-    readonly property color dividerColor: Material.theme === Material.Dark ? "#3a404a" : "#d5dcdf"
-    readonly property color secondaryTextColor: Material.theme === Material.Dark ? "#aab2bd" : "#5f6872"
+    readonly property color dividerColor: Material.theme === Material.Dark ? "#34383d" : "#d5dcdf"
+    readonly property color secondaryTextColor: Material.theme === Material.Dark ? "#a6a6a6" : "#5f6872"
 
     Rectangle {
         anchors.top: parent.top

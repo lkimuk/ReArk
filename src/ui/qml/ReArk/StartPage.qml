@@ -7,19 +7,20 @@ Rectangle {
     id: root
 
     readonly property bool darkTheme: Material.theme === Material.Dark
-    readonly property color pageColor: darkTheme ? "#10151c" : "#f5f7f8"
-    readonly property color panelColor: darkTheme ? "#141b24" : "#ffffff"
-    readonly property color elevatedColor: darkTheme ? "#17212b" : "#ffffff"
-    readonly property color primaryTextColor: darkTheme ? "#f4f7fb" : "#17202a"
-    readonly property color secondaryTextColor: darkTheme ? "#c3ccd7" : "#46515d"
-    readonly property color subtleTextColor: darkTheme ? "#8d98a8" : "#6f7a86"
-    readonly property color mutedTextColor: darkTheme ? "#667181" : "#89939e"
-    readonly property color dividerColor: darkTheme ? "#222d39" : "#dde5eb"
-    readonly property color borderColor: darkTheme ? "#2a3542" : "#d7e0e6"
-    readonly property color hoverColor: darkTheme ? "#1e2a36" : "#eef5f6"
-    readonly property color accentStartColor: darkTheme ? "#79d6cf" : "#50bcb6"
-    readonly property color accentEndColor: darkTheme ? "#4c9792" : "#2e8d88"
-    readonly property color dropOverlayColor: darkTheme ? "#16242f" : "#e5f3f2"
+    readonly property color pageColor: darkTheme ? "#1e1e1e" : "#f5f7f8"
+    readonly property color panelColor: darkTheme ? "#1b1d20" : "#ffffff"
+    readonly property color elevatedColor: darkTheme ? "#202226" : "#ffffff"
+    readonly property color primaryTextColor: darkTheme ? "#e7e7e7" : "#17202a"
+    readonly property color secondaryTextColor: darkTheme ? "#b8bec5" : "#46515d"
+    readonly property color subtleTextColor: darkTheme ? "#9299a1" : "#6f7a86"
+    readonly property color mutedTextColor: darkTheme ? "#747b84" : "#89939e"
+    readonly property color dividerColor: darkTheme ? "#34383d" : "#dde5eb"
+    readonly property color borderColor: darkTheme ? "#34383d" : "#d7e0e6"
+    readonly property color hoverColor: darkTheme ? "#282b30" : "#eef5f6"
+    readonly property color accentColor: darkTheme ? "#3f8fd2" : "#2f80c1"
+    readonly property color accentHoverColor: darkTheme ? "#52a0df" : "#2b72ad"
+    readonly property color accentPressedColor: darkTheme ? "#3379b6" : "#256699"
+    readonly property color dropOverlayColor: darkTheme ? "#24272c" : "#e5f3f2"
     readonly property int recentSectionMaxWidth: 760
     property bool busy: false
     property string status: ""
@@ -51,9 +52,9 @@ Rectangle {
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
-            GradientStop { position: 0.0; color: root.darkTheme ? "#111a24" : "#f8fbfc" }
+            GradientStop { position: 0.0; color: root.darkTheme ? "#202123" : "#f8fbfc" }
             GradientStop { position: 0.48; color: root.pageColor }
-            GradientStop { position: 1.0; color: root.darkTheme ? "#0d1117" : "#eef3f5" }
+            GradientStop { position: 1.0; color: root.darkTheme ? "#171819" : "#eef3f5" }
         }
     }
 
@@ -130,7 +131,7 @@ Rectangle {
 
                 Label {
                     Layout.fillWidth: true
-                    text: qsTr("HarmonyOS NEXT app reverse engineering with agentic analysis")
+                    text: qsTr("HarmonyOS NEXT app reverse engineering and intelligent analysis")
                     color: root.secondaryTextColor
                     font.pixelSize: 16
                     horizontalAlignment: Text.AlignHCenter
@@ -156,11 +157,10 @@ Rectangle {
                     background: Rectangle {
                         radius: 6
                         border.width: 1
-                        border.color: root.darkTheme ? "#8dded8" : "#2a8f8b"
-                        gradient: Gradient {
-                            GradientStop { position: 0.0; color: openButton.hovered ? "#8be1da" : root.accentStartColor }
-                            GradientStop { position: 1.0; color: openButton.hovered ? "#58aaa4" : root.accentEndColor }
-                        }
+                        border.color: openButton.down ? root.accentPressedColor : root.accentHoverColor
+                        color: openButton.down
+                               ? root.accentPressedColor
+                               : (openButton.hovered ? root.accentHoverColor : root.accentColor)
                     }
 
                     contentItem: Item {
@@ -375,8 +375,8 @@ Rectangle {
                         color: recentDelegate.hovered ? root.hoverColor : "transparent"
                         border.width: 1
                         border.color: recentDelegate.hovered
-                                      ? (root.darkTheme ? "#334455" : "#cbdde1")
-                                      : (root.darkTheme ? "#1b2530" : "#e7edf1")
+                                      ? (root.darkTheme ? "#424952" : "#cbdde1")
+                                      : (root.darkTheme ? "#2c3035" : "#e7edf1")
                     }
 
                     contentItem: RowLayout {

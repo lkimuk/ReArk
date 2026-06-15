@@ -13,13 +13,13 @@ Rectangle {
     property string syntax: ""
     property bool findVisible: false
     readonly property bool darkTheme: Material.theme === Material.Dark
-    readonly property color editorColor: darkTheme ? "#111419" : "#ffffff"
-    readonly property color panelColor: darkTheme ? "#171d24" : "#f7fafb"
-    readonly property color panelBorderColor: darkTheme ? "#303945" : "#cbd6dc"
-    readonly property color fieldColor: darkTheme ? "#111820" : "#ffffff"
-    readonly property color fieldBorderColor: darkTheme ? "#485564" : "#b9c7cf"
-    readonly property color accentBorderColor: darkTheme ? "#65c6ca" : "#238996"
-    readonly property color mutedTextColor: darkTheme ? "#9aa7b5" : "#5f6872"
+    readonly property color editorColor: darkTheme ? "#171819" : "#ffffff"
+    readonly property color panelColor: darkTheme ? "#1b1d20" : "#f7fafb"
+    readonly property color panelBorderColor: darkTheme ? "#34383d" : "#cbd6dc"
+    readonly property color fieldColor: darkTheme ? "#17191c" : "#ffffff"
+    readonly property color fieldBorderColor: darkTheme ? "#424952" : "#b9c7cf"
+    readonly property color accentBorderColor: darkTheme ? "#3f8fd2" : "#2f80c1"
+    readonly property color mutedTextColor: darkTheme ? "#9299a1" : "#5f6872"
 
     color: editorColor
 
@@ -152,8 +152,8 @@ Rectangle {
         background: Rectangle {
             radius: 3
             color: button.checked
-                   ? (root.darkTheme ? "#243640" : "#d5edf0")
-                   : button.hovered ? (root.darkTheme ? "#232b34" : "#e8eef0") : "transparent"
+                   ? (root.darkTheme ? "#243546" : "#d5edf0")
+                   : button.hovered ? (root.darkTheme ? "#282b30" : "#e8eef0") : "transparent"
             border.width: button.checked ? 1 : 0
             border.color: root.accentBorderColor
         }
@@ -292,7 +292,7 @@ Rectangle {
                         color: Material.foreground
                         placeholderTextColor: root.mutedTextColor
                         selectedTextColor: root.darkTheme ? "#ffffff" : "#000000"
-                        selectionColor: root.darkTheme ? "#315d78" : "#b8daf0"
+                        selectionColor: root.darkTheme ? "#1f4d78" : "#b8daf0"
                         leftPadding: 0
                         rightPadding: 4
                         topPadding: 0

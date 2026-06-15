@@ -7,8 +7,8 @@ Item {
     property string markdown: ""
     property bool markdownEnabled: true
     property bool darkTheme: true
-    property color textColor: "#eef5ff"
-    property color accentColor: "#6f8cff"
+    property color textColor: "#e7e7e7"
+    property color accentColor: "#3f8fd2"
     property int textPixelSize: 13
     property string emptyText: ""
     property var clipboardController: null

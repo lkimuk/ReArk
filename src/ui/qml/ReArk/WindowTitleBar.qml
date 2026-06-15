@@ -25,7 +25,7 @@ Rectangle {
 
     implicitHeight: 32
     color: darkTheme
-           ? (windowActive ? "#3f3f3f" : "#363636")
+           ? (windowActive ? "#1b1d20" : "#18191b")
            : (windowActive ? "#f3f3f3" : "#eeeeee")
 
     Rectangle {
@@ -33,7 +33,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: 1
-        color: darkTheme ? "#4a4a4a" : "#d8d8d8"
+        color: darkTheme ? "#34383d" : "#d8d8d8"
     }
 
     onTargetWindowChanged: syncMaximized()

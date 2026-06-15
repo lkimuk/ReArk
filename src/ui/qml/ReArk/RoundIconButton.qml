@@ -9,9 +9,9 @@ AbstractButton {
     property int iconSize: 17
     property string iconName: ""
     property string toolTipText: ""
-    property color backgroundColor: "#5d83f4"
-    property color hoverColor: "#4e74e4"
-    property color pressedColor: "#4165d6"
+    property color backgroundColor: "#3f8fd2"
+    property color hoverColor: "#52a0df"
+    property color pressedColor: "#3379b6"
     property color disabledColor: "#b9c4d8"
     property color iconColor: "#ffffff"
     property color focusBorderColor: "#9db5ff"

@@ -7,17 +7,17 @@ Rectangle {
 
     property var block: ({})
     property bool darkTheme: true
-    property color accentColor: "#6f8cff"
+    property color accentColor: "#3f8fd2"
     property var clipboardController: null
 
     readonly property string code: block.code || ""
     readonly property string language: block.language || ""
     readonly property string languageLabel: block.languageLabel || ""
     readonly property bool compact: block.compact === true
-    readonly property color chromeColor: darkTheme ? "#111415" : "#f5f7fa"
-    readonly property color headerTextColor: darkTheme ? "#90a0b4" : "#66758a"
-    readonly property color hoverColor: darkTheme ? "#23292f" : "#e7edf5"
-    readonly property color hairlineColor: darkTheme ? "#1f2933" : "#d9e1ec"
+    readonly property color chromeColor: darkTheme ? "#151719" : "#f5f7fa"
+    readonly property color headerTextColor: darkTheme ? "#929aa3" : "#66758a"
+    readonly property color hoverColor: darkTheme ? "#24282d" : "#e7edf5"
+    readonly property color hairlineColor: darkTheme ? "#2b3036" : "#d9e1ec"
     readonly property real viewportHeight: compact
                                      ? 36
                                      : Math.min(Math.max(74, editor.documentHeight), 430)

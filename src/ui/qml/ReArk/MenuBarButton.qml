@@ -17,14 +17,14 @@ Rectangle {
     Layout.preferredWidth: label.implicitWidth + (embedded ? 20 : 22)
     Layout.fillHeight: true
     color: mouse.containsMouse || menu.visible
-           ? (darkTheme ? (embedded ? "#333333" : "#555555") : "#e5e5e5")
+           ? (darkTheme ? (embedded ? "#282b30" : "#34383d") : "#e5e5e5")
            : "transparent"
 
     Label {
         id: label
         anchors.centerIn: parent
         text: root.text
-        color: root.darkTheme ? "#d9d9d9" : "#202020"
+        color: root.darkTheme ? "#e7e7e7" : "#202020"
         font.family: "Segoe UI"
         font.pixelSize: 13
         renderType: Text.NativeRendering

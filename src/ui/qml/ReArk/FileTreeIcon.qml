@@ -14,19 +14,19 @@ Item {
         var dot = name.lastIndexOf(".")
         return dot >= 0 ? name.substring(dot + 1).toLowerCase() : kind.toLowerCase()
     }
-    readonly property color folderColor: darkTheme ? "#6aa7c8" : "#2d7ea5"
+    readonly property color folderColor: darkTheme ? "#3f8fd2" : "#2f80c1"
     readonly property color fileColor: {
         if (placeholder) {
-            return darkTheme ? "#7d8792" : "#8a949d"
+            return darkTheme ? "#858b92" : "#8a949d"
         }
         if (signatureNode) {
             return "#d6b35d"
         }
         if (name === "Summary") {
-            return "#8fb5ff"
+            return darkTheme ? "#52a0df" : "#5d83f4"
         }
         if (extension === "ets" || extension === "ts") {
-            return "#46a6d9"
+            return darkTheme ? "#3f8fd2" : "#2f80c1"
         }
         if (extension === "js") {
             return "#c8b64d"
@@ -35,9 +35,9 @@ Item {
             return "#7cc47f"
         }
         if (extension === "txt") {
-            return darkTheme ? "#9aa7b5" : "#6f7b86"
+            return darkTheme ? "#9299a1" : "#6f7b86"
         }
-        return darkTheme ? "#9aa7b5" : "#6f7b86"
+        return darkTheme ? "#9299a1" : "#6f7b86"
     }
 
     width: 16

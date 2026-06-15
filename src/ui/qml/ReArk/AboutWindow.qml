@@ -1,15 +1,15 @@
 import QtQuick
-import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
+import QtQuick.Window
 
 ApplicationWindow {
     id: aboutWindow
-    width: 500
-    height: 450
-    minimumWidth: 450
-    minimumHeight: 430
+    width: 580
+    height: 515
+    minimumWidth: 520
+    minimumHeight: 490
     visible: false
     title: qsTr("About ReArk")
     modality: Qt.ApplicationModal
@@ -20,13 +20,13 @@ ApplicationWindow {
     readonly property bool darkTheme: currentTheme === "system"
                                       ? Qt.styleHints.colorScheme === Qt.Dark
                                       : currentTheme === "dark"
-    readonly property color backgroundColor: darkTheme ? "#15171d" : "#ffffff"
-    readonly property color dividerColor: darkTheme ? "#3a404a" : "#d5dcdf"
-    readonly property color secondaryTextColor: darkTheme ? "#aab2bd" : "#5f6872"
-    readonly property color buttonColor: darkTheme ? "#151b24" : "#ffffff"
-    readonly property color buttonHoverColor: darkTheme ? "#1d2530" : "#edf3f5"
-    readonly property color buttonBorderColor: darkTheme ? "#2a3542" : "#d8e0e5"
-    readonly property color buttonHoverBorderColor: darkTheme ? "#344353" : "#cbd8de"
+    readonly property color backgroundColor: darkTheme ? "#1e1e1e" : "#ffffff"
+    readonly property color dividerColor: darkTheme ? "#34383d" : "#d5dcdf"
+    readonly property color secondaryTextColor: darkTheme ? "#a6a6a6" : "#5f6872"
+    readonly property color buttonColor: darkTheme ? "#202226" : "#ffffff"
+    readonly property color buttonHoverColor: darkTheme ? "#282b30" : "#edf3f5"
+    readonly property color buttonBorderColor: darkTheme ? "#34383d" : "#d8e0e5"
+    readonly property color buttonHoverBorderColor: darkTheme ? "#424952" : "#cbd8de"
     readonly property string githubUrl: "https://github.com/lkimuk/ReArk"
     readonly property string websiteUrl: "https://www.cppmore.com/"
     readonly property int copyrightStartYear: 2026
@@ -37,7 +37,7 @@ ApplicationWindow {
 
     color: backgroundColor
     Material.theme: darkTheme ? Material.Dark : Material.Light
-    Material.accent: Material.Teal
+    Material.accent: "#3f8fd2"
     onClosing: {
         if (closeCallback) {
             closeCallback()
@@ -55,7 +55,7 @@ ApplicationWindow {
             anchors.rightMargin: 30
             anchors.topMargin: 30
             anchors.bottomMargin: 20
-            spacing: 16
+            spacing: 14
 
             RowLayout {
                 Layout.fillWidth: true
@@ -163,9 +163,32 @@ ApplicationWindow {
                 color: Material.foreground
             }
 
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                spacing: 6
+
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("Safety and Privacy")
+                    font.pointSize: 10
+                    font.bold: true
+                    color: Material.foreground
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("This software is intended only for legally authorized application analysis and security research. Do not use it for unauthorized reverse engineering, protection bypass, attacks, or other unlawful purposes; and do not share content containing secrets, certificates, user data, or trade secrets with AI.")
+                    font.pointSize: 10
+                    wrapMode: Text.WordWrap
+                    lineHeight: 1.35
+                    color: aboutWindow.secondaryTextColor
+                }
+            }
+
             Item {
                 Layout.fillHeight: true
-                Layout.maximumHeight: 18
+                Layout.maximumHeight: 8
             }
 
             RowLayout {

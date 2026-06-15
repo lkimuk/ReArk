@@ -6,8 +6,8 @@ Item {
 
     property var block: ({})
     property bool darkTheme: true
-    property color textColor: "#eef5ff"
-    property color accentColor: "#6f8cff"
+    property color textColor: "#e7e7e7"
+    property color accentColor: "#3f8fd2"
     property int textPixelSize: 13
 
     readonly property int columnCount: Math.max(1, Number(block.columnCount || 1))
@@ -22,13 +22,13 @@ Item {
         }
         return Math.max(1, total)
     }
-    readonly property color borderColor: darkTheme ? "#2b3a4c" : "#d0dae8"
-    readonly property color headerBackground: darkTheme ? "#142030" : "#eef4fb"
-    readonly property color rowBackground: darkTheme ? "#0f1722" : "#ffffff"
-    readonly property color alternateRowBackground: darkTheme ? "#121c29" : "#f8fafd"
-    readonly property color hoverBackground: darkTheme ? "#192637" : "#f1f6fd"
-    readonly property color mutedTextColor: darkTheme ? "#9fb0c4" : "#5f7085"
-    readonly property color headerAccent: darkTheme ? "#5fd1cd" : "#2b8a8a"
+    readonly property color borderColor: darkTheme ? "#343a42" : "#d0dae8"
+    readonly property color headerBackground: darkTheme ? "#22262b" : "#eef4fb"
+    readonly property color rowBackground: darkTheme ? "#181b1f" : "#ffffff"
+    readonly property color alternateRowBackground: darkTheme ? "#1d2024" : "#f8fafd"
+    readonly property color hoverBackground: darkTheme ? "#252a30" : "#f1f6fd"
+    readonly property color mutedTextColor: darkTheme ? "#9da5ad" : "#5f7085"
+    readonly property color headerAccent: darkTheme ? "#3f8fd2" : "#2b8a8a"
     readonly property real minimumColumnWidth: 120
     readonly property real maximumColumnWidth: 980
     readonly property real averageCharacterWidth: Math.max(7, textPixelSize * 0.62)
@@ -136,7 +136,7 @@ Item {
                             anchors.top: parent.top
                             height: tableRow.header ? 2 : 0
                             color: root.headerAccent
-                            opacity: tableRow.header ? 0.78 : 0
+                            opacity: tableRow.header ? 0.52 : 0
                         }
 
                         Row {
@@ -203,7 +203,7 @@ Item {
                                         anchors.bottom: parent.bottom
                                         width: cellFrame.index === 0 ? 0 : 1
                                         color: root.borderColor
-                                        opacity: 0.72
+                                        opacity: 0.62
                                     }
                                 }
                             }
@@ -215,7 +215,7 @@ Item {
                             anchors.bottom: parent.bottom
                             height: tableRow.index === root.rows.length ? 0 : 1
                             color: root.borderColor
-                            opacity: 0.78
+                            opacity: 0.66
                         }
                     }
                 }

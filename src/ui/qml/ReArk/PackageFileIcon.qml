@@ -8,7 +8,7 @@ Item {
     property string fileKind: "FILE"
     property bool exists: true
     property bool darkTheme: true
-    property color elevatedColor: darkTheme ? "#17212b" : "#ffffff"
+    property color elevatedColor: darkTheme ? "#202226" : "#ffffff"
 
     implicitWidth: 32
     implicitHeight: 32
@@ -30,9 +30,9 @@ Item {
         height: 32
         visible: !root.exists || root.iconUrl.length <= 0
         radius: 2
-        color: root.darkTheme ? "#1b2731" : "#f2f6f8"
+        color: root.darkTheme ? "#1b1d20" : "#f2f6f8"
         border.width: 1
-        border.color: root.darkTheme ? "#8393a2" : "#607080"
+        border.color: root.darkTheme ? "#747b84" : "#607080"
 
         Rectangle {
             anchors.right: parent.right
@@ -51,12 +51,12 @@ Item {
             width: 20
             height: 13
             radius: 2
-            color: root.exists ? "#69d7c7" : "#5b6570"
+            color: root.exists ? "#3f8fd2" : "#5b6570"
 
             Label {
                 anchors.centerIn: parent
                 text: root.fileKind
-                color: root.exists ? "#0c2528" : "#d6dce2"
+                color: root.exists ? "#ffffff" : "#d6dce2"
                 font.pixelSize: 8
                 font.weight: Font.Bold
             }

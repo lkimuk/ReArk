@@ -59,6 +59,16 @@
         <translation>一款用于 HarmonyOS NEXT HAP/ABC 的专业逆向工具，支持反汇编、反编译、Agent智能分析、签名识别、包体浏览等功能。</translation>
     </message>
     <message>
+        <location filename="../../src/ui/qml/ReArk/AboutWindow.qml" line="173"/>
+        <source>Safety and Privacy</source>
+        <translation>安全与隐私</translation>
+    </message>
+    <message>
+        <location filename="../../src/ui/qml/ReArk/AboutWindow.qml" line="181"/>
+        <source>This software is intended only for legally authorized application analysis and security research. Do not use it for unauthorized reverse engineering, protection bypass, attacks, or other unlawful purposes; and do not share content containing secrets, certificates, user data, or trade secrets with AI.</source>
+        <translation>本软件仅用于合法授权的应用分析与安全研究。请勿用于未授权逆向、绕过保护、攻击或其他违法用途；也请勿向 AI 分享包含密钥、证书、用户数据或商业机密的内容。</translation>
+    </message>
+    <message>
         <location filename="../../src/ui/qml/ReArk/AboutWindow.qml" line="81"/>
         <source>Reverse the Ark, Reveal the App</source>
         <translation>Reverse the Ark, Reveal the App</translation>
@@ -1244,8 +1254,8 @@
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/StartPage.qml" line="133"/>
-        <source>HarmonyOS NEXT app reverse engineering with agentic analysis</source>
-        <translation>HarmonyOS NEXT 应用逆向与Agent智能分析</translation>
+        <source>HarmonyOS NEXT app reverse engineering and intelligent analysis</source>
+        <translation>HarmonyOS NEXT 应用逆向与智能分析</translation>
     </message>
     <message>
         <location filename="../../src/ui/qml/ReArk/StartPage.qml" line="186"/>
@@ -1434,8 +1444,8 @@
     </message>
     <message>
         <location filename="../../src/ui/qml/main.qml" line="207"/>
-        <source>Open HAP package or ABC file</source>
-        <translation>打开 HAP 包或 ABC 文件</translation>
+        <source>Open File</source>
+        <translation>打开文件</translation>
     </message>
     <message>
         <location filename="../../src/ui/qml/main.qml" line="209"/>
