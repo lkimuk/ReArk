@@ -7,6 +7,10 @@
 #include <wuwe/agent/llm/llm_provider_factory.h>
 #include <wuwe/agent/llm/llm_provider_registry.h>
 #include <wuwe/agent/tools/tool.hpp>
+#if __has_include(<wuwe/agent/execution/execution.hpp>)
+#include <wuwe/agent/execution/execution.hpp>
+#define REARK_HAS_WUWE_EXECUTION 1
+#endif
 #if __has_include(<wuwe/agent/reasoning/reasoning.hpp>)
 #include <wuwe/agent/reasoning/reasoning.hpp>
 #define REARK_HAS_WUWE_REASONING 1
@@ -19,18 +23,23 @@
 #include "model/AgentMessageModel.h"
 
 #include <QClipboard>
+#include <QDir>
 #include <QGuiApplication>
 #include <QMetaObject>
 #include <QPointer>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QTemporaryDir>
 #include <QTime>
 #include <QTimer>
 #include <QVariantMap>
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <filesystem>
 #include <functional>
 #include <stdexcept>
 #include <system_error>
@@ -65,6 +74,11 @@ bool isToolRoundBudgetExceededText(const QString& value)
 bool isLegacyToolRoundBudgetError(std::error_code ec)
 {
     return ec == std::make_error_code(std::errc::resource_unavailable_try_again);
+}
+
+bool isScriptToolName(const std::string& name)
+{
+    return name == "run_analysis_script";
 }
 
 std::string toStdString(const QString& value)
@@ -103,6 +117,219 @@ std::shared_ptr<wuwe::llm_client> createLlmClient(const AgentSettings& settings)
     }
     return client;
 }
+
+#ifdef REARK_HAS_WUWE_EXECUTION
+constexpr std::size_t kMaxAnalysisScriptCodeBytes = 32 * 1024;
+constexpr std::size_t kMaxAnalysisScriptStdinBytes = 256 * 1024;
+constexpr std::size_t kMaxAnalysisScriptArgumentsBytes =
+    kMaxAnalysisScriptCodeBytes + kMaxAnalysisScriptStdinBytes + 4096;
+constexpr int kMaxAnalysisScriptTimeoutMs = 5000;
+
+std::filesystem::path toFilesystemPath(const QString& value)
+{
+    return std::filesystem::path(value.toStdWString());
+}
+
+std::filesystem::path rearkPythonInterpreter()
+{
+    const QString configured = qEnvironmentVariable("REARK_PYTHON_PATH").trimmed();
+    if (!configured.isEmpty()) {
+        return toFilesystemPath(configured);
+    }
+    return std::filesystem::path(L"python");
+}
+
+wuwe::agent::execution::execution_policy rearkExecutionPolicy(const std::filesystem::path& workdir)
+{
+    namespace execution = wuwe::agent::execution;
+
+    execution::execution_policy policy;
+    policy.allowed_languages = { execution::execution_language::python };
+    policy.default_workdir = workdir;
+    policy.max_limits = {
+        .timeout = std::chrono::milliseconds { kMaxAnalysisScriptTimeoutMs },
+        .max_stdout_bytes = 65536,
+        .max_stderr_bytes = 65536
+    };
+    policy.allow_network = false;
+    policy.allow_file_read = false;
+    policy.allow_file_write = false;
+    policy.allow_shell = false;
+    policy.require_approval_for_network = true;
+    policy.require_approval_for_file_write = true;
+    policy.require_approval_for_shell = true;
+    policy.allowed_env = {};
+    return policy;
+}
+
+void applyAnalysisScriptSchemaLimits(wuwe::llm_tool& tool)
+{
+    if (!isScriptToolName(tool.name) || tool.parameters_json_schema.empty()) {
+        return;
+    }
+
+    try {
+        auto schema = nlohmann::json::parse(tool.parameters_json_schema);
+        if (!schema.is_object()) {
+            return;
+        }
+
+        schema["additionalProperties"] = false;
+        auto& properties = schema["properties"];
+        if (properties.is_object()) {
+            if (auto code = properties.find("code"); code != properties.end() && code->is_object()) {
+                (*code)["maxLength"] = kMaxAnalysisScriptCodeBytes;
+            }
+            if (auto stdinText = properties.find("stdin_text");
+                stdinText != properties.end() && stdinText->is_object()) {
+                (*stdinText)["maxLength"] = kMaxAnalysisScriptStdinBytes;
+            }
+            if (auto timeoutMs = properties.find("timeout_ms");
+                timeoutMs != properties.end() && timeoutMs->is_object()) {
+                (*timeoutMs)["minimum"] = 1;
+                (*timeoutMs)["maximum"] = kMaxAnalysisScriptTimeoutMs;
+            }
+        }
+
+        tool.parameters_json_schema = schema.dump();
+    } catch (const std::exception&) {
+    }
+}
+
+std::string analysisScriptArgumentError(const std::string& argumentsJson)
+{
+    if (argumentsJson.size() > kMaxAnalysisScriptArgumentsBytes) {
+        return "run_analysis_script rejected: arguments JSON is "
+            + std::to_string(argumentsJson.size())
+            + " bytes, exceeding the ReArk host limit of "
+            + std::to_string(kMaxAnalysisScriptArgumentsBytes)
+            + " bytes.";
+    }
+
+    nlohmann::json arguments;
+    try {
+        arguments = nlohmann::json::parse(argumentsJson);
+    } catch (const std::exception& ex) {
+        return std::string("Invalid run_analysis_script arguments: ") + ex.what();
+    }
+
+    if (!arguments.is_object()) {
+        return "Invalid run_analysis_script arguments: expected a JSON object.";
+    }
+
+    for (const auto& item : arguments.items()) {
+        const std::string& key = item.key();
+        if (key != "code" && key != "stdin_text" && key != "timeout_ms") {
+            return "Invalid run_analysis_script arguments: unsupported parameter '" + key
+                + "'. Only code, stdin_text, and timeout_ms are allowed.";
+        }
+    }
+
+    const auto code = arguments.find("code");
+    if (code == arguments.end() || !code->is_string()) {
+        return "Invalid run_analysis_script arguments: code must be a string.";
+    }
+    const std::string codeText = code->get<std::string>();
+    if (codeText.empty()) {
+        return "Invalid run_analysis_script arguments: code must not be empty.";
+    }
+    if (codeText.size() > kMaxAnalysisScriptCodeBytes) {
+        return "run_analysis_script rejected: code is "
+            + std::to_string(codeText.size())
+            + " bytes, exceeding the ReArk host limit of "
+            + std::to_string(kMaxAnalysisScriptCodeBytes)
+            + " bytes.";
+    }
+
+    if (const auto stdinText = arguments.find("stdin_text");
+        stdinText != arguments.end() && !stdinText->is_null()) {
+        if (!stdinText->is_string()) {
+            return "Invalid run_analysis_script arguments: stdin_text must be a string when provided.";
+        }
+        const std::string stdinValue = stdinText->get<std::string>();
+        if (stdinValue.size() > kMaxAnalysisScriptStdinBytes) {
+            return "run_analysis_script rejected: stdin_text is "
+                + std::to_string(stdinValue.size())
+                + " bytes, exceeding the ReArk host limit of "
+                + std::to_string(kMaxAnalysisScriptStdinBytes)
+                + " bytes.";
+        }
+    }
+
+    if (const auto timeoutMs = arguments.find("timeout_ms");
+        timeoutMs != arguments.end() && !timeoutMs->is_null()) {
+        if (!timeoutMs->is_number_integer()) {
+            return "Invalid run_analysis_script arguments: timeout_ms must be an integer.";
+        }
+        long long timeoutValue = 0;
+        try {
+            timeoutValue = timeoutMs->get<long long>();
+        } catch (const std::exception&) {
+            return "Invalid run_analysis_script arguments: timeout_ms must be between 1 and "
+                + std::to_string(kMaxAnalysisScriptTimeoutMs)
+                + ".";
+        }
+        if (timeoutValue < 1 || timeoutValue > kMaxAnalysisScriptTimeoutMs) {
+            return "Invalid run_analysis_script arguments: timeout_ms must be between 1 and "
+                + std::to_string(kMaxAnalysisScriptTimeoutMs)
+                + ".";
+        }
+    }
+
+    return {};
+}
+
+class ReArkExecutionToolProvider {
+public:
+    explicit ReArkExecutionToolProvider(
+        std::shared_ptr<wuwe::agent::execution::execution_tool_provider> provider)
+        : provider_(std::move(provider))
+    {
+    }
+
+    [[nodiscard]] std::vector<wuwe::llm_tool> tools() const
+    {
+        std::vector<wuwe::llm_tool> result = provider_->tools();
+        for (wuwe::llm_tool& tool : result) {
+            if (!isScriptToolName(tool.name)) {
+                continue;
+            }
+            tool.description += " Host limits: code <= "
+                + std::to_string(kMaxAnalysisScriptCodeBytes)
+                + " bytes, stdin_text <= "
+                + std::to_string(kMaxAnalysisScriptStdinBytes)
+                + " bytes, timeout_ms 1-"
+                + std::to_string(kMaxAnalysisScriptTimeoutMs)
+                + ".";
+            applyAnalysisScriptSchemaLimits(tool);
+        }
+        return result;
+    }
+
+    [[nodiscard]] wuwe::llm_tool_result invoke(
+        const std::string& name,
+        const std::string& argumentsJson,
+        std::stop_token stopToken) const
+    {
+        if (!isScriptToolName(name)) {
+            return provider_->invoke(name, argumentsJson, stopToken);
+        }
+
+        const std::string error = analysisScriptArgumentError(argumentsJson);
+        if (!error.empty()) {
+            return {
+                .content = error,
+                .error_code = wuwe::agent::make_error_code(
+                    wuwe::agent::llm_error_code::invalid_tool_arguments)
+            };
+        }
+        return provider_->invoke(name, argumentsJson, stopToken);
+    }
+
+private:
+    std::shared_ptr<wuwe::agent::execution::execution_tool_provider> provider_;
+};
+#endif
 
 struct ReArkToolContext {
     std::shared_ptr<const DecompilerController::AgentSnapshot> snapshot;
@@ -820,6 +1047,9 @@ QString agentErrorMessage(std::error_code ec, const QString& message)
     if (ec == wuwe::agent::llm_error_code::cancelled) {
         return AgentController::tr("Analysis cancelled.");
     }
+    if (ec == wuwe::agent::llm_error_code::timeout) {
+        return AgentController::tr("Analysis timed out before a final answer was produced.");
+    }
     if (!message.isEmpty()) {
         return message;
     }
@@ -837,8 +1067,15 @@ QString reasoningEventStatus(const wuwe::agent::reasoning::reasoning_event& even
     case reasoning::reasoning_event_type::model_started:
         return AgentController::tr("Calling model...");
     case reasoning::reasoning_event_type::tool_started:
-        return AgentController::tr("Reading analysis data...");
+        return event.tool_call != nullptr && isScriptToolName(event.tool_call->name)
+            ? AgentController::tr("Running analysis script...")
+            : AgentController::tr("Reading analysis data...");
     case reasoning::reasoning_event_type::tool_completed:
+        if (event.tool_call != nullptr && isScriptToolName(event.tool_call->name)) {
+            return event.tool_result != nullptr && event.tool_result->error_code
+                ? AgentController::tr("Analysis script failed.")
+                : AgentController::tr("Analysis script completed.");
+        }
         return event.tool_result != nullptr && event.tool_result->error_code
             ? AgentController::tr("Analysis data read failed.")
             : AgentController::tr("Analysis data ready.");
@@ -861,6 +1098,10 @@ QString reasoningEventStatus(const wuwe::agent::reasoning::reasoning_event& even
     case reasoning::reasoning_event_type::completed:
         return AgentController::tr("Ready");
     case reasoning::reasoning_event_type::failed:
+        if (event.result != nullptr
+            && event.result->reasoning_error == reasoning::reasoning_error_code::timeout) {
+            return AgentController::tr("Analysis timed out.");
+        }
         return AgentController::tr("Analysis failed.");
     case reasoning::reasoning_event_type::cancelled:
         return AgentController::tr("Analysis cancelled.");
@@ -891,6 +1132,8 @@ QString conversationInputForReasoning(const QVariantList& messages)
 
 QString reasoningErrorMessage(const wuwe::agent::reasoning::reasoning_error& error)
 {
+    namespace reasoning = wuwe::agent::reasoning;
+
     const QString code = QString::fromUtf8(wuwe::agent::reasoning::to_string(error.code));
     const QString message = QString::fromStdString(error.message);
     const QString underlying = error.underlying_error
@@ -904,9 +1147,46 @@ QString reasoningErrorMessage(const wuwe::agent::reasoning::reasoning_error& err
         return toolRoundBudgetExceededMessage();
     }
 
+    switch (error.code) {
+    case reasoning::reasoning_error_code::timeout:
+        return AgentController::tr("Analysis timed out before a final answer was produced.");
+    case reasoning::reasoning_error_code::model_call_budget_exceeded:
+        return AgentController::tr("Analysis stopped because the model call budget was exhausted.");
+    case reasoning::reasoning_error_code::tool_call_budget_exceeded:
+        return AgentController::tr("Analysis stopped because the tool call budget was exhausted.");
+    case reasoning::reasoning_error_code::tool_round_budget_exceeded:
+        return toolRoundBudgetExceededMessage();
+    case reasoning::reasoning_error_code::planning_budget_exceeded:
+        return AgentController::tr("Analysis stopped because the planning budget was exhausted.");
+    case reasoning::reasoning_error_code::reflection_budget_exceeded:
+        return AgentController::tr("Analysis stopped because the review budget was exhausted.");
+    case reasoning::reasoning_error_code::cancelled:
+        return AgentController::tr("Analysis cancelled.");
+    default:
+        break;
+    }
+
     return error.underlying_error
         ? agentErrorMessage(error.underlying_error, message)
         : message;
+}
+
+QString reasoningCancelledMessage(const wuwe::agent::reasoning::reasoning_result& result)
+{
+    namespace reasoning = wuwe::agent::reasoning;
+
+    if (result.reasoning_error == reasoning::reasoning_error_code::timeout) {
+        return AgentController::tr("Analysis timed out before a final answer was produced.");
+    }
+    if (result.reasoning_error != reasoning::reasoning_error_code::cancelled
+        && result.reasoning_error != reasoning::reasoning_error_code::none) {
+        return reasoningErrorMessage({
+            .code = result.reasoning_error,
+            .underlying_error = result.underlying_error,
+            .message = result.error
+        });
+    }
+    return AgentController::tr("Analysis cancelled.");
 }
 
 wuwe::agent::reasoning::reasoning_policy rearkReasoningPolicy(const std::string& input)
@@ -920,9 +1200,9 @@ wuwe::agent::reasoning::reasoning_policy rearkReasoningPolicy(const std::string&
     });
     policy.budget.max_model_calls = 12;
     policy.budget.max_tool_calls = 36;
-    policy.budget.max_tool_rounds = 10;
-    policy.budget.max_steps = 10;
-    policy.budget.timeout = std::chrono::milliseconds { 180000 };
+    policy.budget.max_tool_rounds = 12;
+    policy.budget.max_steps = 12;
+    policy.budget.timeout = std::chrono::milliseconds { 300000 };
     return policy;
 }
 #endif
@@ -935,6 +1215,14 @@ struct AgentController::Runtime {
 #ifdef REARK_HAS_WUWE
     std::shared_ptr<wuwe::llm_client> client;
     std::shared_ptr<ReArkToolProvider> rearkProvider;
+#ifdef REARK_HAS_WUWE_EXECUTION
+    std::unique_ptr<QTemporaryDir> executionWorkdir;
+    wuwe::agent::audit::in_memory_audit_sink executionAuditSink;
+    wuwe::agent::approval::deny_all_approval_service executionApprovalService;
+    std::unique_ptr<wuwe::agent::execution::execution_runtime> executionRuntime;
+    std::shared_ptr<wuwe::agent::execution::execution_tool_provider> executionProvider;
+    std::shared_ptr<ReArkExecutionToolProvider> guardedExecutionProvider;
+#endif
     std::shared_ptr<AgentKnowledgeController::KnowledgeToolProviderHandle> knowledgeProvider;
     std::shared_ptr<wuwe::composite_tool_provider> provider;
     std::unique_ptr<wuwe::llm_agent_runner> runner;
@@ -1031,7 +1319,8 @@ void AgentController::ask(const QString& question)
 
 #ifdef REARK_HAS_WUWE
     if (running_) {
-        cancel();
+        pendingQuestion_ = trimmed;
+        cancelCurrentRun(false);
         return;
     }
 
@@ -1065,12 +1354,42 @@ void AgentController::ask(const QString& question)
         return;
     }
     runtime_->rearkProvider = std::make_shared<ReArkToolProvider>(snapshot);
+#ifdef REARK_HAS_WUWE_EXECUTION
+    runtime_->executionWorkdir = std::make_unique<QTemporaryDir>(
+        QDir::temp().filePath(QStringLiteral("ReArk-agent-analysis-XXXXXX")));
+    if (runtime_->executionWorkdir->isValid()) {
+        namespace execution = wuwe::agent::execution;
+        const auto workdir = toFilesystemPath(runtime_->executionWorkdir->path());
+        runtime_->executionRuntime = std::make_unique<execution::execution_runtime>(
+            execution::make_controlled_process_backend(execution::controlled_process_backend_config {
+                .python_interpreter = rearkPythonInterpreter(),
+                .fallback_workdir = workdir
+            }),
+            rearkExecutionPolicy(workdir),
+            &runtime_->executionAuditSink,
+            &runtime_->executionApprovalService);
+        runtime_->executionProvider = std::make_shared<execution::execution_tool_provider>(
+            *runtime_->executionRuntime,
+            execution::execution_tool_options {
+                .tool_name = "run_analysis_script",
+                .description = "Run a short Python analysis script with bounded output and timeout."
+            });
+        runtime_->guardedExecutionProvider =
+            std::make_shared<ReArkExecutionToolProvider>(runtime_->executionProvider);
+    }
+#endif
     runtime_->knowledgeProvider = knowledgeController_ != nullptr
         ? knowledgeController_->createKnowledgeToolProvider()
         : nullptr;
-    runtime_->provider = runtime_->knowledgeProvider != nullptr && runtime_->knowledgeProvider->provider != nullptr
-        ? wuwe::compose_tool_providers(runtime_->rearkProvider, runtime_->knowledgeProvider->provider)
-        : wuwe::compose_tool_providers(runtime_->rearkProvider);
+    runtime_->provider = wuwe::compose_tool_providers(runtime_->rearkProvider);
+#ifdef REARK_HAS_WUWE_EXECUTION
+    if (runtime_->guardedExecutionProvider != nullptr) {
+        runtime_->provider->add(runtime_->guardedExecutionProvider);
+    }
+#endif
+    if (runtime_->knowledgeProvider != nullptr && runtime_->knowledgeProvider->provider != nullptr) {
+        runtime_->provider->add(runtime_->knowledgeProvider->provider);
+    }
     runtime_->stopSource = std::stop_source {};
 
     appendMessage(QStringLiteral("user"), trimmed);
@@ -1104,6 +1423,15 @@ void AgentController::ask(const QString& question)
             "Use plain text numbering such as [Step 1], Step 1, 1., or (1), not keycap emoji numbering. "
             "Do not claim that ReArk Agent never uses emoji; explain that stable simple emoji are supported, while keycap and complex emoji sequences are avoided. "
             "Be concise, evidence-based, and mention when requested data is unavailable through the tools.");
+#ifdef REARK_HAS_WUWE_EXECUTION
+    if (runtime_->guardedExecutionProvider != nullptr) {
+        systemPrompt += QStringLiteral(
+            " Use the bounded local Python analysis capability when a short deterministic calculation would verify decoding, "
+            "decryption, hashing, byte conversion, or other reverse-engineering arithmetic. "
+            "When using local Python analysis, pass required data through the script or stdin and keep the script short, deterministic, and side-effect free. "
+            "Local Python analysis accepts only code, stdin_text, and timeout_ms; code must be at most 32768 bytes, stdin_text at most 262144 bytes, and timeout_ms at most 5000.");
+    }
+#endif
     if (knowledgeController_ != nullptr && knowledgeController_->hasReadyReferences()) {
         systemPrompt += QStringLiteral(
             "\n\nAttached reference documents for this chat:\n%1"
@@ -1192,6 +1520,7 @@ void AgentController::ask(const QString& question)
                 : finalText);
             self->setStatus(AgentController::tr("Ready"));
             self->resetRun();
+            self->startPendingQuestion();
         }, Qt::QueuedConnection);
     };
     options.callbacks.on_error = [self](const reasoning::reasoning_error& error) {
@@ -1211,21 +1540,23 @@ void AgentController::ask(const QString& question)
             self->setRunning(false);
             self->setStatus(message);
             self->resetRun();
+            self->startPendingQuestion();
         }, Qt::QueuedConnection);
     };
     options.callbacks.on_cancelled = [self](const reasoning::reasoning_result& result) {
         if (!self) {
             return;
         }
-        Q_UNUSED(result);
-        QMetaObject::invokeMethod(self.data(), [self] {
+        const QString message = reasoningCancelledMessage(result);
+        QMetaObject::invokeMethod(self.data(), [self, message] {
             if (!self) {
                 return;
             }
-            self->setStatus(AgentController::tr("Analysis cancelled."));
-            self->finishActiveAssistantMessage(AgentController::tr("Analysis cancelled."));
+            self->setStatus(message);
+            self->finishActiveAssistantMessage(message);
             self->setRunning(false);
             self->resetRun();
+            self->startPendingQuestion();
         }, Qt::QueuedConnection);
     };
 
@@ -1277,10 +1608,12 @@ void AgentController::ask(const QString& question)
         if (!self) {
             return;
         }
-        Q_UNUSED(call);
-        QMetaObject::invokeMethod(self.data(), [self] {
+        const QString status = call.name == "run_analysis_script"
+            ? AgentController::tr("Running analysis script...")
+            : AgentController::tr("Reading analysis data...");
+        QMetaObject::invokeMethod(self.data(), [self, status] {
             if (self) {
-                self->setStatus(AgentController::tr("Reading analysis data..."));
+                self->setStatus(status);
             }
         }, Qt::QueuedConnection);
     };
@@ -1289,13 +1622,19 @@ void AgentController::ask(const QString& question)
             if (!self) {
                 return;
             }
-            Q_UNUSED(call);
             const bool ok = !result.error_code;
-            QMetaObject::invokeMethod(self.data(), [self, ok] {
+            const bool analysisScript = call.name == "run_analysis_script";
+            QMetaObject::invokeMethod(self.data(), [self, ok, analysisScript] {
                 if (self) {
-                    self->setStatus(ok
-                        ? AgentController::tr("Analysis data ready.")
-                        : AgentController::tr("Analysis data read failed."));
+                    if (analysisScript) {
+                        self->setStatus(ok
+                            ? AgentController::tr("Analysis script completed.")
+                            : AgentController::tr("Analysis script failed."));
+                    } else {
+                        self->setStatus(ok
+                            ? AgentController::tr("Analysis data ready.")
+                            : AgentController::tr("Analysis data read failed."));
+                    }
                 }
             }, Qt::QueuedConnection);
         };
@@ -1309,6 +1648,7 @@ void AgentController::ask(const QString& question)
                 self->finishActiveAssistantMessage(AgentController::tr("No response."));
                 self->setStatus(AgentController::tr("Ready"));
                 self->resetRun();
+                self->startPendingQuestion();
             }
         }, Qt::QueuedConnection);
     };
@@ -1325,6 +1665,7 @@ void AgentController::ask(const QString& question)
                     self->setStatus(msg);
                     self->setRunning(false);
                     self->resetRun();
+                    self->startPendingQuestion();
                 }
             }, Qt::QueuedConnection);
         };
@@ -1338,6 +1679,7 @@ void AgentController::ask(const QString& question)
                 self->finishActiveAssistantMessage(AgentController::tr("Analysis cancelled."));
                 self->setRunning(false);
                 self->resetRun();
+                self->startPendingQuestion();
             }
         }, Qt::QueuedConnection);
     };
@@ -1349,13 +1691,24 @@ void AgentController::ask(const QString& question)
 
 void AgentController::cancel()
 {
+    cancelCurrentRun(true);
+}
+
+void AgentController::cancelCurrentRun(bool clearPendingQuestion)
+{
     if (!available()) {
+        if (clearPendingQuestion) {
+            pendingQuestion_.clear();
+        }
         setRunning(false);
         setStatus(unavailableMessage());
         return;
     }
 
 #ifdef REARK_HAS_WUWE
+    if (clearPendingQuestion) {
+        pendingQuestion_.clear();
+    }
 #ifdef REARK_HAS_WUWE_REASONING
     if (runtime_->reasoningRun.has_value()) {
         runtime_->stopSource.request_stop();
@@ -1380,12 +1733,25 @@ void AgentController::cancel()
     setStatus(tr("Analysis cancelled."));
 }
 
+void AgentController::startPendingQuestion()
+{
+    const QString next = std::exchange(pendingQuestion_, {});
+    if (next.trimmed().isEmpty()) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(this, [this, next] {
+        ask(next);
+    }, Qt::QueuedConnection);
+}
+
 void AgentController::newChat()
 {
     if (running_) {
         cancel();
         return;
     }
+    pendingQuestion_.clear();
     resetRun();
     setRunning(false);
     clearMessages();
@@ -1649,6 +2015,13 @@ void AgentController::resetRun()
     runtime_->runner.reset();
     runtime_->provider.reset();
     runtime_->knowledgeProvider.reset();
+#ifdef REARK_HAS_WUWE_EXECUTION
+    runtime_->guardedExecutionProvider.reset();
+    runtime_->executionProvider.reset();
+    runtime_->executionRuntime.reset();
+    runtime_->executionWorkdir.reset();
+    runtime_->executionAuditSink.clear();
+#endif
     runtime_->rearkProvider.reset();
     runtime_->client.reset();
     runtime_->stopSource = std::stop_source {};

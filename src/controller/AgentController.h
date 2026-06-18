@@ -71,6 +71,8 @@ private:
     void setErrorMessage(const QString& errorMessage);
     void setStatus(const QString& status);
     void resetRun();
+    void cancelCurrentRun(bool clearPendingQuestion);
+    void startPendingQuestion();
     [[nodiscard]] QString unavailableMessage() const;
 
     DecompilerController* decompilerController_ = nullptr;
@@ -84,6 +86,7 @@ private:
     QString pendingAssistantDelta_;
     QTimer* assistantDeltaTimer_ = nullptr;
     int activeAssistantMessage_ = -1;
+    QString pendingQuestion_;
     bool running_ = false;
 };
 
