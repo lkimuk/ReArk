@@ -8,6 +8,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QTemporaryDir>
 
 #include <memory>
 #include <stop_token>
@@ -18,10 +19,17 @@ namespace HyleDecompiler {
 
 using Session = hyle::hap::decompiled_package_session;
 
+struct PackageSession {
+    QString path;
+    QString displayName;
+    Session session;
+};
+
 struct SessionContext {
     hyle::async::thread_pool_executor executor;
     std::stop_source stopSource;
-    Session session;
+    std::unique_ptr<QTemporaryDir> appTempDir;
+    std::vector<PackageSession> packages;
 
     SessionContext();
     [[nodiscard]] hyle::async::scheduler scheduler() const noexcept;
@@ -55,6 +63,7 @@ struct SourceRequest {
     std::size_t hyleId = 0;
     QString name;
     QString path;
+    std::size_t packageId = 0;
 };
 
 struct SourceBatchResult {
@@ -76,34 +85,47 @@ struct DisassemblyResult {
     int nodeIndex,
     std::size_t hyleId,
     const QString& name,
-    std::stop_token stopToken = {});
+    std::stop_token stopToken = {},
+    std::size_t packageId = 0);
 [[nodiscard]] SourceBatchResult decompileSourceFiles(
     const std::shared_ptr<SessionContext>& context,
     std::vector<SourceRequest> requests);
 [[nodiscard]] bool isSourceFileCached(
     const std::shared_ptr<SessionContext>& context,
     std::size_t hyleId);
+[[nodiscard]] bool isSourceFileCached(
+    const std::shared_ptr<SessionContext>& context,
+    std::size_t hyleId,
+    std::size_t packageId);
 [[nodiscard]] DisassemblyResult disassembleSourceFileText(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     std::size_t sourceFileId,
     const QString& name,
-    std::stop_token stopToken = {});
+    std::stop_token stopToken = {},
+    std::size_t packageId = 0);
 [[nodiscard]] SourceResult readResourceContent(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     std::size_t hyleId,
     const QString& name,
-    std::stop_token stopToken = {});
+    std::stop_token stopToken = {},
+    std::size_t packageId = 0);
 [[nodiscard]] SourceResult readSignatureContent(
     const QString& filePath,
     int nodeIndex,
     const QString& name);
+[[nodiscard]] SourceResult readSignatureContent(
+    const std::shared_ptr<SessionContext>& context,
+    int nodeIndex,
+    const QString& name,
+    std::size_t packageId = 0);
 [[nodiscard]] SourceResult readSummaryContent(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     const QString& name,
-    std::stop_token stopToken = {});
+    std::stop_token stopToken = {},
+    std::size_t packageId = 0);
 
 } // namespace HyleDecompiler
 

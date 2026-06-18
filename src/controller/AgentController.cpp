@@ -412,25 +412,29 @@ QString readSnapshotSource(
             -1,
             file->hyleId,
             file->name,
-            stopToken);
+            stopToken,
+            file->packageId);
     } else if (file->section == QStringLiteral("signature")) {
         result = HyleDecompiler::readSignatureContent(
-            snapshot.packagePath,
+            snapshot.packageContext,
             -1,
-            file->name);
+            file->name,
+            file->packageId);
     } else if (file->section == QStringLiteral("summary")) {
         result = HyleDecompiler::readSummaryContent(
             snapshot.packageContext,
             -1,
             file->name,
-            stopToken);
+            stopToken,
+            file->packageId);
     } else {
         result = HyleDecompiler::decompileSourceFile(
             snapshot.packageContext,
             -1,
             file->hyleId,
             file->name,
-            stopToken);
+            stopToken,
+            file->packageId);
     }
 
     if (!result.error.isEmpty()) {
@@ -521,7 +525,8 @@ QString readSnapshotDisassembly(
         -1,
         file->hyleId,
         file->name,
-        stopToken);
+        stopToken,
+        file->packageId);
     if (!result.error.isEmpty()) {
         QString text = QStringLiteral(
             "# status: error\n"

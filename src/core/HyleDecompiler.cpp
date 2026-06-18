@@ -6,6 +6,8 @@
 
 #include <QFileInfo>
 #include <QBuffer>
+#include <QDir>
+#include <QFile>
 #include <QHash>
 #include <QImage>
 #include <QJsonDocument>
@@ -19,7 +21,9 @@
 #include <cctype>
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <optional>
+#include <string_view>
 #include <thread>
 #include <system_error>
 #include <utility>
@@ -77,6 +81,39 @@ std::string toUtf8Path(const QString& value)
 bool isAbcFile(const QString& filePath)
 {
     return QFileInfo(filePath).suffix().compare(QStringLiteral("abc"), Qt::CaseInsensitive) == 0;
+}
+
+bool isAppFile(const QString& filePath)
+{
+    return QFileInfo(filePath).suffix().compare(QStringLiteral("app"), Qt::CaseInsensitive) == 0;
+}
+
+bool hasHapSuffix(const std::string& path)
+{
+    constexpr std::string_view suffix = ".hap";
+    const std::string lower = toLower(path);
+    return lower.size() >= suffix.size()
+        && lower.compare(lower.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+QString sanitizedTempFileName(QString value)
+{
+    value.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    value = QFileInfo(value).fileName();
+    if (value.isEmpty()) {
+        value = QStringLiteral("module.hap");
+    }
+    for (QChar& ch : value) {
+        if (ch == QLatin1Char('/') || ch == QLatin1Char('\\') || ch == QLatin1Char(':')
+            || ch == QLatin1Char('*') || ch == QLatin1Char('?') || ch == QLatin1Char('"')
+            || ch == QLatin1Char('<') || ch == QLatin1Char('>') || ch == QLatin1Char('|')) {
+            ch = QLatin1Char('_');
+        }
+    }
+    if (!value.endsWith(QStringLiteral(".hap"), Qt::CaseInsensitive)) {
+        value += QStringLiteral(".hap");
+    }
+    return value;
 }
 
 QString normalizeSourceContent(QString content);
@@ -494,41 +531,10 @@ DecompiledSourceFile inspectSignatureFile(const std::string& hylePath)
     };
 }
 
-DecompiledSourceFile inspectSummaryFile(const HyleDecompiler::SessionContext& context)
+DecompiledSourceFile lazySignatureFile(const QString& name, std::size_t packageId)
 {
-    auto summary = hyle::async::sync_wait(
-        context.session.summary_async(
-            context.scheduler(),
-            context.stopToken()));
-    if (!summary) {
-        return {
-            QStringLiteral("Summary"),
-            QStringLiteral("TXT"),
-            errorMessage("Summarize package failed", summary.error()),
-            {},
-            QStringLiteral("summary"),
-            QStringLiteral("text"),
-            0,
-            false
-        };
-    }
-
-    return {
-        QStringLiteral("Summary"),
-        QStringLiteral("TXT"),
-        normalizeSourceContent(fromUtf8(hyle::hap::format_decompiled_package_summary(*summary))),
-        {},
-        QStringLiteral("summary"),
-        QStringLiteral("text"),
-        0,
-        false
-    };
-}
-
-DecompiledSourceFile lazySignatureFile()
-{
-    return {
-        QStringLiteral("Signature.txt"),
+    DecompiledSourceFile file {
+        name,
         QStringLiteral("TXT"),
         {},
         {},
@@ -537,12 +543,14 @@ DecompiledSourceFile lazySignatureFile()
         0,
         true
     };
+    file.packageId = packageId;
+    return file;
 }
 
-DecompiledSourceFile lazySummaryFile()
+DecompiledSourceFile lazySummaryFile(const QString& name, std::size_t packageId)
 {
-    return {
-        QStringLiteral("Summary"),
+    DecompiledSourceFile file {
+        name,
         QStringLiteral("TXT"),
         {},
         {},
@@ -551,6 +559,8 @@ DecompiledSourceFile lazySummaryFile()
         0,
         true
     };
+    file.packageId = packageId;
+    return file;
 }
 
 QString normalizeSourceContent(QString content)
@@ -605,6 +615,137 @@ std::optional<std::size_t> moduleIdForSourceFile(
     }
 
     return std::nullopt;
+}
+
+HyleDecompiler::PackageSession* packageSession(
+    const std::shared_ptr<HyleDecompiler::SessionContext>& context,
+    std::size_t packageId)
+{
+    if (!context || packageId >= context->packages.size()) {
+        return nullptr;
+    }
+    return &context->packages.at(packageId);
+}
+
+QString prefixedPath(const QString& prefix, const std::string& path)
+{
+    const QString itemPath = fromUtf8(path);
+    if (prefix.isEmpty()) {
+        return itemPath;
+    }
+    if (itemPath.isEmpty()) {
+        return prefix;
+    }
+    return prefix + QLatin1Char('/') + itemPath;
+}
+
+std::size_t appendOpenedPackageFiles(
+    HyleDecompiler::OpenResult& result,
+    HyleDecompiler::PackageSession& package,
+    std::size_t packageId,
+    const QString& pathPrefix)
+{
+    const auto sourceFileCount = package.session.source_files().size();
+    result.files.reserve(result.files.size() + sourceFileCount + package.session.resources().size());
+    const auto& modules = package.session.modules();
+    for (const auto& file : package.session.source_files()) {
+        const auto moduleId = moduleIdForSourceFile(file, modules);
+        result.files.push_back({
+            prefixedPath(pathPrefix, file.path),
+            languageKind(file.language),
+            {},
+            {},
+            QStringLiteral("source"),
+            QStringLiteral("text"),
+            file.id,
+            true,
+            false,
+            moduleId,
+            true,
+            packageId
+        });
+    }
+    for (const auto& resource : package.session.resources()) {
+        result.files.push_back({
+            prefixedPath(pathPrefix, resource.path),
+            resourceKindName(resource.kind),
+            {},
+            {},
+            QStringLiteral("resource"),
+            isImageResource(resource.kind, resource.path)
+                ? QStringLiteral("image")
+                : isMediaResource(resource.kind, resource.path) ? QStringLiteral("media")
+                : isTextResource(resource.kind) ? QStringLiteral("text") : QStringLiteral("hex"),
+            resource.id,
+            !resource.is_directory,
+            resource.is_directory,
+            std::nullopt,
+            false,
+            packageId
+        });
+    }
+    return sourceFileCount;
+}
+
+QString openPackageIntoResult(
+    HyleDecompiler::OpenResult& result,
+    const std::shared_ptr<HyleDecompiler::SessionContext>& context,
+    const QString& packagePath,
+    const QString& displayName,
+    const QString& pathPrefix,
+    std::size_t& sourceFileCount)
+{
+    auto session = hyle::async::sync_wait(
+        hyle::hap::open_decompiled_package_async(
+            context->scheduler(),
+            toUtf8Path(packagePath),
+            {},
+            context->stopToken()));
+    if (!session) {
+        return errorMessage("Open package failed", session.error());
+    }
+
+    HyleDecompiler::PackageSession package;
+    package.path = packagePath;
+    package.displayName = displayName;
+    package.session = std::move(*session);
+
+    const auto packageId = context->packages.size();
+    context->packages.push_back(std::move(package));
+    auto& storedPackage = context->packages.back();
+
+    if (result.appIconBytes.isEmpty()) {
+        auto launcherIcon = hyle::async::sync_wait(
+            storedPackage.session.read_launcher_app_icon_async(
+                context->scheduler(),
+                context->stopToken()));
+        if (launcherIcon) {
+            result.appIconBytes = appIconBytes(*launcherIcon);
+            result.appIconPath = fromUtf8(launcherIcon->icon.path);
+            result.appIconLayered = launcherIcon->icon.layered;
+            if (result.appIconPath.isEmpty()) {
+                result.appIconPath = fromUtf8(launcherIcon->resource.path);
+            }
+        }
+    }
+
+    sourceFileCount += appendOpenedPackageFiles(result, storedPackage, packageId, pathPrefix);
+    return {};
+}
+
+QString writeExtractedHap(
+    const QString& targetPath,
+    const std::vector<std::byte>& bytes)
+{
+    QFile file(targetPath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        return QObject::tr("Extract HAP failed: cannot write %1").arg(targetPath);
+    }
+    const auto* data = reinterpret_cast<const char*>(bytes.data());
+    if (file.write(data, static_cast<qint64>(bytes.size())) != static_cast<qint64>(bytes.size())) {
+        return QObject::tr("Extract HAP failed: cannot write all bytes to %1").arg(targetPath);
+    }
+    return {};
 }
 
 } // namespace
@@ -668,72 +809,120 @@ OpenResult openFile(
         return result;
     }
 
-    auto session = hyle::async::sync_wait(
-        hyle::hap::open_decompiled_package_async(
-            context->scheduler(),
-            hylePath,
-            {},
-            context->stopToken()));
-    if (!session) {
-        result.error = errorMessage("Open package failed", session.error());
-        return result;
-    }
+    std::size_t sourceFileCount = 0;
+    std::size_t packageCount = 0;
+    QStringList diagnostics;
 
-    context->session = std::move(*session);
-
-    auto launcherIcon = hyle::async::sync_wait(
-        context->session.read_launcher_app_icon_async(
-            context->scheduler(),
-            context->stopToken()));
-    if (launcherIcon) {
-        result.appIconBytes = appIconBytes(*launcherIcon);
-        result.appIconPath = fromUtf8(launcherIcon->icon.path);
-        result.appIconLayered = launcherIcon->icon.layered;
-        if (result.appIconPath.isEmpty()) {
-            result.appIconPath = fromUtf8(launcherIcon->resource.path);
+    if (isAppFile(filePath)) {
+        auto appSession = hyle::async::sync_wait(
+            hyle::hap::open_decompiled_package_async(
+                context->scheduler(),
+                hylePath,
+                {},
+                context->stopToken()));
+        if (!appSession) {
+            result.error = errorMessage("Open APP failed", appSession.error());
+            return result;
         }
+
+        context->appTempDir = std::make_unique<QTemporaryDir>();
+        if (!context->appTempDir->isValid()) {
+            result.error = QObject::tr("Create temporary APP extraction directory failed.");
+            return result;
+        }
+
+        int extractedIndex = 0;
+        for (const auto& resource : appSession->resources()) {
+            if (context->stopToken().stop_requested()) {
+                result.error = QObject::tr("Open package cancelled.");
+                return result;
+            }
+            if (resource.is_directory || !hasHapSuffix(resource.path)) {
+                continue;
+            }
+
+            auto content = hyle::async::sync_wait(
+                appSession->read_resource_async(
+                    context->scheduler(),
+                    resource.id,
+                    context->stopToken()));
+            if (!content) {
+                diagnostics.append(errorMessage("Extract HAP failed", content.error()));
+                continue;
+            }
+
+            const QString displayName = fromUtf8(resource.path);
+            const QString fileName = QStringLiteral("%1-%2")
+                .arg(extractedIndex++, 3, 10, QLatin1Char('0'))
+                .arg(sanitizedTempFileName(displayName));
+            const QString extractedPath = QDir(context->appTempDir->path()).filePath(fileName);
+            const QString writeError = writeExtractedHap(extractedPath, content->bytes);
+            if (!writeError.isEmpty()) {
+                diagnostics.append(writeError);
+                continue;
+            }
+
+            const QString prefix = displayName;
+            const QString openError = openPackageIntoResult(
+                result,
+                context,
+                extractedPath,
+                displayName,
+                prefix,
+                sourceFileCount);
+            if (!openError.isEmpty()) {
+                diagnostics.append(QObject::tr("%1: %2").arg(displayName, openError));
+                continue;
+            }
+            ++packageCount;
+        }
+
+        if (packageCount == 0) {
+            result.error = diagnostics.isEmpty()
+                ? QObject::tr("APP package contains no .hap modules: %1").arg(filePath)
+                : diagnostics.join(QLatin1Char('\n'));
+            return result;
+        }
+    } else {
+        const QString openError = openPackageIntoResult(
+            result,
+            context,
+            filePath,
+            QFileInfo(filePath).fileName(),
+            {},
+            sourceFileCount);
+        if (!openError.isEmpty()) {
+            result.error = openError;
+            return result;
+        }
+        packageCount = 1;
     }
 
-    const auto sourceFileCount = context->session.source_files().size();
-    result.files.reserve(sourceFileCount + context->session.resources().size() + 2U);
-    const auto& modules = context->session.modules();
-    for (const auto& file : context->session.source_files()) {
-        const auto moduleId = moduleIdForSourceFile(file, modules);
-        result.files.push_back({
-            fromUtf8(file.path),
-            languageKind(file.language),
-            {},
-            {},
-            QStringLiteral("source"),
-            QStringLiteral("text"),
-            file.id,
-            true,
-            false,
-            moduleId,
-            true
-        });
-    }
-    for (const auto& resource : context->session.resources()) {
-        result.files.push_back({
-            fromUtf8(resource.path),
-            resourceKindName(resource.kind),
-            {},
-            {},
-            QStringLiteral("resource"),
-            isImageResource(resource.kind, resource.path)
-                ? QStringLiteral("image")
-                : isMediaResource(resource.kind, resource.path) ? QStringLiteral("media")
-                : isTextResource(resource.kind) ? QStringLiteral("text") : QStringLiteral("hex"),
-            resource.id,
-            !resource.is_directory,
-            resource.is_directory
-        });
+    const bool multiPackageMetadata = packageCount > 1;
+    for (std::size_t packageId = 0; packageId < context->packages.size(); ++packageId) {
+        QString displayName = context->packages.at(packageId).displayName;
+        if (displayName.isEmpty()) {
+            displayName = QObject::tr("Module %1").arg(static_cast<int>(packageId + 1));
+        }
+
+        const QString signatureName = multiPackageMetadata
+            ? displayName + QStringLiteral("/Package signature")
+            : QStringLiteral("Package signature");
+        const QString summaryName = multiPackageMetadata
+            ? displayName + QStringLiteral("/Summary")
+            : QStringLiteral("Summary");
+        result.files.push_back(lazySignatureFile(signatureName, packageId));
+        result.files.push_back(lazySummaryFile(summaryName, packageId));
     }
 
-    result.files.push_back(lazySignatureFile());
-    result.files.push_back(lazySummaryFile());
-
-    result.status = QObject::tr("Indexed %1 source file(s)").arg(static_cast<int>(sourceFileCount));
+    result.status = isAppFile(filePath)
+        ? QObject::tr("Indexed %1 source file(s) from %2 HAP module(s)")
+              .arg(static_cast<int>(sourceFileCount))
+              .arg(static_cast<int>(packageCount))
+        : QObject::tr("Indexed %1 source file(s)").arg(static_cast<int>(sourceFileCount));
+    if (!diagnostics.isEmpty()) {
+        result.status += QObject::tr(" (%1 warning(s))").arg(diagnostics.size());
+    }
     return result;
 }
 
@@ -742,7 +931,8 @@ SourceResult readResourceContent(
     int nodeIndex,
     std::size_t hyleId,
     const QString& name,
-    std::stop_token stopToken)
+    std::stop_token stopToken,
+    std::size_t packageId)
 {
     PerformanceTrace trace(QStringLiteral("HyleDecompiler::readResourceContent"));
 
@@ -750,14 +940,15 @@ SourceResult readResourceContent(
     result.nodeIndex = nodeIndex;
     result.name = name;
 
-    if (!context || !context->session.valid()) {
+    auto* package = packageSession(context, packageId);
+    if (!package || !package->session.valid()) {
         result.error = QObject::tr("Decompiler session is not available.");
         return result;
     }
 
     LinkedStopToken linkedStop(context->stopToken(), stopToken);
     auto content = hyle::async::sync_wait(
-        context->session.read_resource_async(
+        package->session.read_resource_async(
             context->scheduler(),
             hyleId,
             linkedStop.token()));
@@ -806,11 +997,31 @@ SourceResult readSignatureContent(
     return result;
 }
 
+SourceResult readSignatureContent(
+    const std::shared_ptr<SessionContext>& context,
+    int nodeIndex,
+    const QString& name,
+    std::size_t packageId)
+{
+    auto* package = packageSession(context, packageId);
+    if (!package) {
+        SourceResult result;
+        result.nodeIndex = nodeIndex;
+        result.name = name;
+        result.kind = QStringLiteral("TXT");
+        result.contentMode = QStringLiteral("text");
+        result.error = QObject::tr("Decompiler session is not available.");
+        return result;
+    }
+    return readSignatureContent(package->path, nodeIndex, name);
+}
+
 SourceResult readSummaryContent(
     const std::shared_ptr<SessionContext>& context,
     int nodeIndex,
     const QString& name,
-    std::stop_token stopToken)
+    std::stop_token stopToken,
+    std::size_t packageId)
 {
     PerformanceTrace trace(QStringLiteral("HyleDecompiler::readSummaryContent"));
 
@@ -820,7 +1031,8 @@ SourceResult readSummaryContent(
     result.kind = QStringLiteral("TXT");
     result.contentMode = QStringLiteral("text");
 
-    if (!context || !context->session.valid()) {
+    auto* package = packageSession(context, packageId);
+    if (!package || !package->session.valid()) {
         result.error = QObject::tr("Decompiler session is not available.");
         return result;
     }
@@ -830,7 +1042,17 @@ SourceResult readSummaryContent(
         return result;
     }
 
-    result.content = inspectSummaryFile(*context).content;
+    LinkedStopToken linkedStop(context->stopToken(), stopToken);
+    auto summary = hyle::async::sync_wait(
+        package->session.summary_async(
+            context->scheduler(),
+            linkedStop.token()));
+    if (!summary) {
+        result.error = errorMessage("Summarize package failed", summary.error());
+        return result;
+    }
+
+    result.content = normalizeSourceContent(fromUtf8(hyle::hap::format_decompiled_package_summary(*summary)));
     return result;
 }
 
@@ -839,7 +1061,8 @@ SourceResult decompileSourceFile(
     int nodeIndex,
     std::size_t hyleId,
     const QString& name,
-    std::stop_token stopToken)
+    std::stop_token stopToken,
+    std::size_t packageId)
 {
     PerformanceTrace trace(QStringLiteral("HyleDecompiler::decompileSourceFile"));
 
@@ -847,14 +1070,15 @@ SourceResult decompileSourceFile(
     result.nodeIndex = nodeIndex;
     result.name = name;
 
-    if (!context || !context->session.valid()) {
+    auto* packageContext = packageSession(context, packageId);
+    if (!packageContext || !packageContext->session.valid()) {
         result.error = QObject::tr("Decompiler session is not available.");
         return result;
     }
 
     LinkedStopToken linkedStop(context->stopToken(), stopToken);
     auto package = hyle::async::sync_wait(
-        context->session.decompile_source_file_async(
+        packageContext->session.decompile_source_file_async(
             context->scheduler(),
             hyleId,
             {},
@@ -894,75 +1118,90 @@ SourceBatchResult decompileSourceFiles(
         return batch;
     }
 
-    if (!context || !context->session.valid()) {
+    if (!context) {
         for (auto& result : batch.files) {
             result.error = QObject::tr("Decompiler session is not available.");
         }
         return batch;
     }
 
-    std::vector<std::size_t> sourceFileIds;
-    sourceFileIds.reserve(requests.size());
-    QHash<std::size_t, int> idToBatchIndex;
-    QHash<QString, int> pathToBatchIndex;
+    std::map<std::size_t, std::vector<int>> groupedRequests;
     for (int i = 0; i < static_cast<int>(requests.size()); ++i) {
-        const auto& request = requests.at(static_cast<std::size_t>(i));
-        sourceFileIds.push_back(request.hyleId);
-        idToBatchIndex.insert(request.hyleId, i);
-        pathToBatchIndex.insert(request.path, i);
-    }
-
-    auto package = hyle::async::sync_wait(
-        context->session.decompile_source_files_async(
-            context->scheduler(),
-            std::move(sourceFileIds),
-            {},
-            context->stopToken()));
-    if (!package) {
-        const QString error = errorMessage("Decompile failed", package.error());
-        for (auto& result : batch.files) {
-            result.error = error;
-        }
-        return batch;
-    }
-
-    const QString diagnostics = diagnosticsText(package->diagnostics);
-    for (auto& result : batch.files) {
-        result.diagnostics = diagnostics;
+        groupedRequests[requests.at(static_cast<std::size_t>(i)).packageId].push_back(i);
     }
 
     std::vector<bool> assigned(requests.size(), false);
-    for (const auto& source : package->files) {
-        const QString path = fromUtf8(source.path);
-        int batchIndex = pathToBatchIndex.value(path, -1);
-        if (batchIndex < 0) {
+    for (const auto& [packageId, requestIndices] : groupedRequests) {
+        auto* packageContext = packageSession(context, packageId);
+        if (!packageContext || !packageContext->session.valid()) {
+            for (int index : requestIndices) {
+                batch.files.at(static_cast<std::size_t>(index)).error =
+                    QObject::tr("Decompiler session is not available.");
+            }
+            continue;
+        }
+
+        std::vector<std::size_t> sourceFileIds;
+        sourceFileIds.reserve(requestIndices.size());
+        QHash<std::size_t, int> idToBatchIndex;
+        QHash<QString, int> pathToBatchIndex;
+        for (int index : requestIndices) {
+            const auto& request = requests.at(static_cast<std::size_t>(index));
+            sourceFileIds.push_back(request.hyleId);
+            idToBatchIndex.insert(request.hyleId, index);
+            pathToBatchIndex.insert(request.path, index);
+        }
+
+        auto package = hyle::async::sync_wait(
+            packageContext->session.decompile_source_files_async(
+                context->scheduler(),
+                std::move(sourceFileIds),
+                {},
+                context->stopToken()));
+        if (!package) {
+            const QString error = errorMessage("Decompile failed", package.error());
+            for (int index : requestIndices) {
+                batch.files.at(static_cast<std::size_t>(index)).error = error;
+            }
+            continue;
+        }
+
+        const QString diagnostics = diagnosticsText(package->diagnostics);
+        for (int index : requestIndices) {
+            batch.files.at(static_cast<std::size_t>(index)).diagnostics = diagnostics;
+        }
+
+        for (const auto& source : package->files) {
+            const QString path = fromUtf8(source.path);
+            int batchIndex = pathToBatchIndex.value(path, -1);
             const auto foundInfo = std::ranges::find_if(
-                context->session.source_files(),
+                packageContext->session.source_files(),
                 [&source](const hyle::hap::decompiled_source_file_info& info) {
                     return info.path == source.path;
                 });
-            if (foundInfo != context->session.source_files().end()) {
+            if (foundInfo != packageContext->session.source_files().end()) {
                 batchIndex = idToBatchIndex.value(foundInfo->id, -1);
             }
+            if (batchIndex >= 0 && batchIndex < static_cast<int>(batch.files.size())) {
+                applyDecompiledSource(batch.files.at(static_cast<std::size_t>(batchIndex)), source);
+                assigned.at(static_cast<std::size_t>(batchIndex)) = true;
+            }
         }
-        if (batchIndex >= 0 && batchIndex < static_cast<int>(batch.files.size())) {
+
+        std::size_t fallbackPosition = 0;
+        for (const auto& source : package->files) {
+            while (fallbackPosition < requestIndices.size()
+                   && assigned.at(static_cast<std::size_t>(requestIndices.at(fallbackPosition)))) {
+                ++fallbackPosition;
+            }
+            if (fallbackPosition >= requestIndices.size()) {
+                break;
+            }
+            const int batchIndex = requestIndices.at(fallbackPosition);
             applyDecompiledSource(batch.files.at(static_cast<std::size_t>(batchIndex)), source);
             assigned.at(static_cast<std::size_t>(batchIndex)) = true;
+            ++fallbackPosition;
         }
-    }
-
-    int fallbackIndex = 0;
-    for (const auto& source : package->files) {
-        while (fallbackIndex < static_cast<int>(assigned.size())
-               && assigned.at(static_cast<std::size_t>(fallbackIndex))) {
-            ++fallbackIndex;
-        }
-        if (fallbackIndex >= static_cast<int>(assigned.size())) {
-            break;
-        }
-        applyDecompiledSource(batch.files.at(static_cast<std::size_t>(fallbackIndex)), source);
-        assigned.at(static_cast<std::size_t>(fallbackIndex)) = true;
-        ++fallbackIndex;
     }
 
     for (int i = 0; i < static_cast<int>(assigned.size()); ++i) {
@@ -979,7 +1218,17 @@ bool isSourceFileCached(
     const std::shared_ptr<SessionContext>& context,
     std::size_t hyleId)
 {
-    return context && context->session.valid() && context->session.is_source_file_cached(hyleId, {});
+    return isSourceFileCached(context, hyleId, 0);
+}
+
+bool isSourceFileCached(
+    const std::shared_ptr<SessionContext>& context,
+    std::size_t hyleId,
+    std::size_t packageId)
+{
+    auto* packageContext = packageSession(context, packageId);
+    return packageContext && packageContext->session.valid()
+        && packageContext->session.is_source_file_cached(hyleId, {});
 }
 
 DisassemblyResult disassembleSourceFileText(
@@ -987,7 +1236,8 @@ DisassemblyResult disassembleSourceFileText(
     int nodeIndex,
     std::size_t sourceFileId,
     const QString& name,
-    std::stop_token stopToken)
+    std::stop_token stopToken,
+    std::size_t packageId)
 {
     PerformanceTrace trace(QStringLiteral("HyleDecompiler::disassembleSourceFileText"));
 
@@ -995,14 +1245,15 @@ DisassemblyResult disassembleSourceFileText(
     result.nodeIndex = nodeIndex;
     result.name = name;
 
-    if (!context || !context->session.valid()) {
+    auto* packageContext = packageSession(context, packageId);
+    if (!packageContext || !packageContext->session.valid()) {
         result.error = QObject::tr("Decompiler session is not available.");
         return result;
     }
 
     LinkedStopToken linkedStop(context->stopToken(), stopToken);
     auto text = hyle::async::sync_wait(
-        context->session.disassemble_source_file_text_async(
+        packageContext->session.disassemble_source_file_text_async(
             context->scheduler(),
             sourceFileId,
             {},

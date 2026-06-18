@@ -12,6 +12,7 @@
 #include <QJsonParseError>
 #include <QMimeDatabase>
 #include <QProcess>
+#include <QStringList>
 #include <QUrl>
 #include <QVariantMap>
 #include <QtConcurrent>
@@ -490,7 +491,10 @@ QString DecompilerController::agentEntryPoints() const
 
 QString DecompilerController::agentSignatureSummary(int maxChars) const
 {
-    const QVariantList candidates = treeModel_.navigationCandidates(QStringLiteral("signature"), 10);
+    const QVariantList candidates = treeModel_.navigationCandidates(QStringLiteral("signature"), 50);
+    QStringList loadedSignatures;
+    QStringList unloadedSignatures;
+
     for (const QVariant& item : candidates) {
         const QVariantMap candidate = item.toMap();
         const int nodeIndex = candidateNodeIndex(candidate);
@@ -503,9 +507,30 @@ QString DecompilerController::agentSignatureSummary(int maxChars) const
             continue;
         }
         if (treeModel_.nodeNeedsLoad(nodeIndex)) {
-            return tr("Signature view is not loaded yet: %1").arg(treeModel_.nodePath(nodeIndex));
+            unloadedSignatures.append(treeModel_.nodePath(nodeIndex));
+            continue;
         }
-        return boundedAgentText(treeModel_.nodeContent(nodeIndex), maxChars);
+        loadedSignatures.append(QStringLiteral("# %1\n\n%2")
+            .arg(treeModel_.nodePath(nodeIndex), treeModel_.nodeContent(nodeIndex)));
+    }
+
+    if (!loadedSignatures.isEmpty()) {
+        QString text = loadedSignatures.join(QStringLiteral("\n\n"));
+        if (!unloadedSignatures.isEmpty()) {
+            text += QStringLiteral("\n\n# Unloaded signature view(s)\n");
+            for (const QString& path : unloadedSignatures) {
+                text += QStringLiteral("- %1\n").arg(path);
+            }
+        }
+        return boundedAgentText(text, maxChars);
+    }
+
+    if (!unloadedSignatures.isEmpty()) {
+        QString text = tr("Signature view is not loaded yet:");
+        for (const QString& path : unloadedSignatures) {
+            text += QStringLiteral("\n- %1").arg(path);
+        }
+        return boundedAgentText(text, maxChars);
     }
 
     return tr("No package signature view is available.");
@@ -540,6 +565,7 @@ DecompilerController::AgentSnapshot DecompilerController::agentSnapshot(
         file.section = candidate.value(QStringLiteral("section")).toString();
         file.contentMode = treeModel_.nodeContentMode(nodeIndex);
         file.hyleId = treeModel_.nodeHyleId(nodeIndex);
+        file.packageId = treeModel_.nodePackageId(nodeIndex);
         file.loaded = !treeModel_.nodeNeedsLoad(nodeIndex);
         if (file.loaded) {
             file.content = boundedAgentText(treeModel_.nodeContent(nodeIndex), maxContentChars);
@@ -835,7 +861,10 @@ void DecompilerController::startNodeLoad(int nodeIndex, bool foreground)
         setBusy(true);
         tabsModel_.setNodeLoading(nodeIndex, true);
         const bool cachedSource = section == QStringLiteral("source")
-            && HyleDecompiler::isSourceFileCached(packageContext_, treeModel_.nodeHyleId(nodeIndex));
+            && HyleDecompiler::isSourceFileCached(
+                packageContext_,
+                treeModel_.nodeHyleId(nodeIndex),
+                treeModel_.nodePackageId(nodeIndex));
         setStatus(section == QStringLiteral("resource") || section == QStringLiteral("signature") || section == QStringLiteral("summary")
             ? tr("Loading %1").arg(name)
             : cachedSource ? tr("Opening cached %1").arg(name) : tr("Decompiling %1").arg(name));
@@ -860,8 +889,8 @@ void DecompilerController::startNodeLoad(int nodeIndex, bool foreground)
 
     const quint64 requestId = openRequestId_;
     const auto hyleId = treeModel_.nodeHyleId(nodeIndex);
+    const auto packageId = treeModel_.nodePackageId(nodeIndex);
     const auto context = packageContext_;
-    const QString packagePath = packagePath_;
 
     auto* watcher = new QFutureWatcher<HyleDecompiler::SourceResult>(this);
     connect(watcher, &QFutureWatcher<HyleDecompiler::SourceResult>::finished, this, [this, watcher, requestId]() {
@@ -869,17 +898,17 @@ void DecompilerController::startNodeLoad(int nodeIndex, bool foreground)
         watcher->deleteLater();
     });
 
-    watcher->setFuture(QtConcurrent::run([context, packagePath, nodeIndex, hyleId, name, section]() {
+    watcher->setFuture(QtConcurrent::run([context, nodeIndex, hyleId, packageId, name, section]() {
         if (section == QStringLiteral("resource")) {
-            return HyleDecompiler::readResourceContent(context, nodeIndex, hyleId, name);
+            return HyleDecompiler::readResourceContent(context, nodeIndex, hyleId, name, {}, packageId);
         }
         if (section == QStringLiteral("signature")) {
-            return HyleDecompiler::readSignatureContent(packagePath, nodeIndex, name);
+            return HyleDecompiler::readSignatureContent(context, nodeIndex, name, packageId);
         }
         if (section == QStringLiteral("summary")) {
-            return HyleDecompiler::readSummaryContent(context, nodeIndex, name);
+            return HyleDecompiler::readSummaryContent(context, nodeIndex, name, {}, packageId);
         }
-        return HyleDecompiler::decompileSourceFile(context, nodeIndex, hyleId, name);
+        return HyleDecompiler::decompileSourceFile(context, nodeIndex, hyleId, name, {}, packageId);
     }));
 }
 
@@ -896,6 +925,7 @@ void DecompilerController::startDisassemblyLoad(int nodeIndex)
 
     const quint64 requestId = openRequestId_;
     const auto sourceFileId = treeModel_.nodeHyleId(nodeIndex);
+    const auto packageId = treeModel_.nodePackageId(nodeIndex);
     const auto context = packageContext_;
     const QString name = treeModel_.nodeName(nodeIndex);
 
@@ -907,8 +937,8 @@ void DecompilerController::startDisassemblyLoad(int nodeIndex)
         watcher->deleteLater();
     });
 
-    watcher->setFuture(QtConcurrent::run([context, nodeIndex, sourceFileId, name]() {
-        return HyleDecompiler::disassembleSourceFileText(context, nodeIndex, sourceFileId, name);
+    watcher->setFuture(QtConcurrent::run([context, nodeIndex, sourceFileId, packageId, name]() {
+        return HyleDecompiler::disassembleSourceFileText(context, nodeIndex, sourceFileId, name, {}, packageId);
     }));
 }
 
@@ -999,7 +1029,8 @@ void DecompilerController::startSourceBatchLoad(std::vector<int> nodeIndices)
             nodeIndex,
             treeModel_.nodeHyleId(nodeIndex),
             treeModel_.nodeName(nodeIndex),
-            treeModel_.nodePath(nodeIndex)
+            treeModel_.nodePath(nodeIndex),
+            treeModel_.nodePackageId(nodeIndex)
         });
     }
 

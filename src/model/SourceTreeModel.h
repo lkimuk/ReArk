@@ -27,6 +27,7 @@ struct DecompiledSourceFile {
     bool directory = false;
     std::optional<std::size_t> moduleId;
     bool disassemblable = false;
+    std::size_t packageId = 0;
 };
 
 class SourceTreeModel : public QAbstractListModel {
@@ -67,6 +68,7 @@ public:
     [[nodiscard]] QByteArray nodeBinaryContent(int nodeIndex) const;
     [[nodiscard]] QString nodeDiagnostics(int nodeIndex) const;
     [[nodiscard]] std::size_t nodeHyleId(int nodeIndex) const;
+    [[nodiscard]] std::size_t nodePackageId(int nodeIndex) const;
     [[nodiscard]] QString nodeName(int nodeIndex) const;
     [[nodiscard]] QString nodePath(int nodeIndex) const;
     [[nodiscard]] QString nodeKind(int nodeIndex) const;
@@ -111,6 +113,7 @@ private:
         std::size_t hyleId = 0;
         std::optional<std::size_t> moduleId;
         bool disassemblable = false;
+        std::size_t packageId = 0;
         bool lazy = false;
         bool directory = false;
         bool expanded = true;

@@ -51,6 +51,7 @@ public:
         QString content;
         QString disassembly;
         std::size_t hyleId = 0;
+        std::size_t packageId = 0;
         bool loaded = false;
         bool hasDisassembly = false;
         bool disassemblyLoaded = false;

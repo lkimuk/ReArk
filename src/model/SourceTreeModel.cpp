@@ -215,6 +215,14 @@ std::size_t SourceTreeModel::nodeHyleId(int nodeIndex) const
     return nodes_.at(static_cast<std::size_t>(nodeIndex)).hyleId;
 }
 
+std::size_t SourceTreeModel::nodePackageId(int nodeIndex) const
+{
+    if (nodeIndex < 0 || nodeIndex >= static_cast<int>(nodes_.size())) {
+        return 0;
+    }
+    return nodes_.at(static_cast<std::size_t>(nodeIndex)).packageId;
+}
+
 QString SourceTreeModel::nodeName(int nodeIndex) const
 {
     if (nodeIndex < 0 || nodeIndex >= static_cast<int>(nodes_.size())) {
@@ -729,56 +737,129 @@ void SourceTreeModel::rebuildTree(std::vector<DecompiledSourceFile> files)
     const int sourceRoot = addCategory(QStringLiteral("Source code"), true);
     const int resourceRoot = addCategory(QStringLiteral("Package files"), true);
 
-    const auto signatureFile = std::ranges::find_if(files, [](const DecompiledSourceFile& file) {
+    const auto isSignatureFile = [](const DecompiledSourceFile& file) {
         return file.section == QStringLiteral("signature");
-    });
-    const auto summaryFile = std::ranges::find_if(files, [](const DecompiledSourceFile& file) {
+    };
+    const auto isSummaryFile = [](const DecompiledSourceFile& file) {
         return file.section == QStringLiteral("summary");
-    });
+    };
+    const auto signatureFile = std::ranges::find_if(files, isSignatureFile);
+    const auto summaryFile = std::ranges::find_if(files, isSummaryFile);
+    const auto signatureFileCount = std::ranges::count_if(files, isSignatureFile);
+    const auto summaryFileCount = std::ranges::count_if(files, isSummaryFile);
+    const bool multiMetadata = signatureFileCount > 1 || summaryFileCount > 1;
 
-    TreeNode signature;
-    signature.name = QStringLiteral("Package signature");
-    signature.path = QStringLiteral("Package signature");
-    signature.kind = QStringLiteral("TXT");
-    signature.section = QStringLiteral("signature");
-    signature.depth = 0;
-    signature.parent = -1;
-    if (signatureFile != files.end()) {
-        signature.kind = signatureFile->kind;
-        signature.contentMode = signatureFile->contentMode;
-        if (!signatureFile->content.isEmpty() || !signatureFile->binaryContent.isEmpty() || !signatureFile->lazy) {
-            signature.document = makeDocument(std::move(signatureFile->content), std::move(signatureFile->binaryContent), {}, signatureFile->kind, signatureFile->contentMode);
+    const auto populateLeaf = [this](TreeNode& node, DecompiledSourceFile& file) {
+        node.kind = file.kind;
+        node.section = file.section;
+        node.contentMode = file.contentMode;
+        if (!file.content.isEmpty() || !file.binaryContent.isEmpty() || !file.lazy) {
+            node.document = makeDocument(std::move(file.content), std::move(file.binaryContent), {}, file.kind, file.contentMode);
         }
-        signature.hyleId = signatureFile->hyleId;
-        signature.lazy = signatureFile->lazy;
-    } else {
-        signature.kind = QStringLiteral("PLACEHOLDER");
-        signature.placeholder = true;
-        signature.document = makeDocument(QStringLiteral("Waiting for Hyle package signature API"), {}, {}, signature.kind, QStringLiteral("text"));
-    }
-    nodes_.push_back(std::move(signature));
+        node.hyleId = file.hyleId;
+        node.moduleId = file.moduleId;
+        node.disassemblable = file.disassemblable;
+        node.packageId = file.packageId;
+        node.lazy = file.lazy;
+    };
 
-    TreeNode summary;
-    summary.name = QStringLiteral("Summary");
-    summary.path = QStringLiteral("Summary");
-    summary.kind = QStringLiteral("TXT");
-    summary.section = QStringLiteral("summary");
-    summary.depth = 0;
-    summary.parent = -1;
-    if (summaryFile != files.end()) {
-        summary.kind = summaryFile->kind;
-        summary.contentMode = summaryFile->contentMode;
-        if (!summaryFile->content.isEmpty() || !summaryFile->binaryContent.isEmpty() || !summaryFile->lazy) {
-            summary.document = makeDocument(std::move(summaryFile->content), std::move(summaryFile->binaryContent), {}, summaryFile->kind, summaryFile->contentMode);
+    if (!multiMetadata) {
+        TreeNode signature;
+        signature.name = QStringLiteral("Package signature");
+        signature.path = QStringLiteral("Package signature");
+        signature.kind = QStringLiteral("TXT");
+        signature.section = QStringLiteral("signature");
+        signature.depth = 0;
+        signature.parent = -1;
+        if (signatureFile != files.end()) {
+            populateLeaf(signature, *signatureFile);
+        } else {
+            signature.kind = QStringLiteral("PLACEHOLDER");
+            signature.placeholder = true;
+            signature.document = makeDocument(QStringLiteral("Waiting for Hyle package signature API"), {}, {}, signature.kind, QStringLiteral("text"));
         }
-        summary.hyleId = summaryFile->hyleId;
-        summary.lazy = summaryFile->lazy;
+        nodes_.push_back(std::move(signature));
+
+        TreeNode summary;
+        summary.name = QStringLiteral("Summary");
+        summary.path = QStringLiteral("Summary");
+        summary.kind = QStringLiteral("TXT");
+        summary.section = QStringLiteral("summary");
+        summary.depth = 0;
+        summary.parent = -1;
+        if (summaryFile != files.end()) {
+            populateLeaf(summary, *summaryFile);
+        } else {
+            summary.kind = QStringLiteral("PLACEHOLDER");
+            summary.placeholder = true;
+            summary.document = makeDocument(QStringLiteral("Waiting for Hyle summary API"), {}, {}, summary.kind, QStringLiteral("text"));
+        }
+        nodes_.push_back(std::move(summary));
     } else {
-        summary.kind = QStringLiteral("PLACEHOLDER");
-        summary.placeholder = true;
-        summary.document = makeDocument(QStringLiteral("Waiting for Hyle summary API"), {}, {}, summary.kind, QStringLiteral("text"));
+        const int metadataRoot = addCategory(QStringLiteral("Package metadata"), true);
+
+        const auto addMetadataEntry = [this, &directories, &populateLeaf, metadataRoot](DecompiledSourceFile& file) {
+            if (file.section != QStringLiteral("signature") && file.section != QStringLiteral("summary")) {
+                return;
+            }
+
+            auto normalizedPath = file.name;
+            normalizedPath.replace(QLatin1Char('\\'), QLatin1Char('/'));
+            const auto parts = normalizedPath.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+            if (parts.empty()) {
+                return;
+            }
+
+            int parent = metadataRoot;
+            QString accumulated = nodes_.at(static_cast<std::size_t>(parent)).path;
+            const int directoryPartCount = parts.size() - 1;
+
+            for (int i = 0; i < directoryPartCount; ++i) {
+                if (!accumulated.isEmpty()) {
+                    accumulated += QLatin1Char('/');
+                }
+                accumulated += parts.at(i);
+
+                const auto directoryKey = QStringLiteral("metadata:") + accumulated;
+                const auto found = directories.find(directoryKey);
+                if (found != directories.end()) {
+                    parent = found->second;
+                    continue;
+                }
+
+                TreeNode directory;
+                directory.name = parts.at(i);
+                directory.path = accumulated;
+                directory.kind = QStringLiteral("DIR");
+                directory.section = QStringLiteral("metadata");
+                directory.directory = true;
+                directory.expanded = true;
+                directory.depth = i + 1;
+                directory.parent = parent;
+
+                const auto createdNodeIndex = static_cast<int>(nodes_.size());
+                nodes_.push_back(std::move(directory));
+                directories.emplace(directoryKey, createdNodeIndex);
+                nodes_.at(static_cast<std::size_t>(parent)).children.push_back(createdNodeIndex);
+                parent = createdNodeIndex;
+            }
+
+            TreeNode metadata;
+            metadata.name = parts.last();
+            metadata.path = normalizedPath;
+            metadata.depth = parts.size();
+            metadata.parent = parent;
+            populateLeaf(metadata, file);
+
+            const auto createdNodeIndex = static_cast<int>(nodes_.size());
+            nodes_.push_back(std::move(metadata));
+            nodes_.at(static_cast<std::size_t>(parent)).children.push_back(createdNodeIndex);
+        };
+
+        for (auto& file : files) {
+            addMetadataEntry(file);
+        }
     }
-    nodes_.push_back(std::move(summary));
 
     const auto addTreeEntry = [this, &directories](int root, DecompiledSourceFile& file, int& firstFileNode) {
         if (file.section != QStringLiteral("source") && file.section != QStringLiteral("resource")) {
@@ -842,6 +923,7 @@ void SourceTreeModel::rebuildTree(std::vector<DecompiledSourceFile> files)
         source.hyleId = file.hyleId;
         source.moduleId = file.moduleId;
         source.disassemblable = file.disassemblable;
+        source.packageId = file.packageId;
         source.lazy = file.lazy;
         source.directory = false;
         source.depth = parts.empty() ? 1 : parts.size();
