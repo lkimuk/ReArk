@@ -149,7 +149,10 @@ wuwe::agent::execution::execution_policy rearkExecutionPolicy(const std::filesys
     policy.max_limits = {
         .timeout = std::chrono::milliseconds { kMaxAnalysisScriptTimeoutMs },
         .max_stdout_bytes = 65536,
-        .max_stderr_bytes = 65536
+        .max_stderr_bytes = 65536,
+        .max_code_bytes = kMaxAnalysisScriptCodeBytes,
+        .max_stdin_bytes = kMaxAnalysisScriptStdinBytes,
+        .max_total_input_bytes = kMaxAnalysisScriptCodeBytes + kMaxAnalysisScriptStdinBytes
     };
     policy.allow_network = false;
     policy.allow_file_read = false;
@@ -222,57 +225,6 @@ std::string analysisScriptArgumentError(const std::string& argumentsJson)
         if (key != "code" && key != "stdin_text" && key != "timeout_ms") {
             return "Invalid run_analysis_script arguments: unsupported parameter '" + key
                 + "'. Only code, stdin_text, and timeout_ms are allowed.";
-        }
-    }
-
-    const auto code = arguments.find("code");
-    if (code == arguments.end() || !code->is_string()) {
-        return "Invalid run_analysis_script arguments: code must be a string.";
-    }
-    const std::string codeText = code->get<std::string>();
-    if (codeText.empty()) {
-        return "Invalid run_analysis_script arguments: code must not be empty.";
-    }
-    if (codeText.size() > kMaxAnalysisScriptCodeBytes) {
-        return "run_analysis_script rejected: code is "
-            + std::to_string(codeText.size())
-            + " bytes, exceeding the ReArk host limit of "
-            + std::to_string(kMaxAnalysisScriptCodeBytes)
-            + " bytes.";
-    }
-
-    if (const auto stdinText = arguments.find("stdin_text");
-        stdinText != arguments.end() && !stdinText->is_null()) {
-        if (!stdinText->is_string()) {
-            return "Invalid run_analysis_script arguments: stdin_text must be a string when provided.";
-        }
-        const std::string stdinValue = stdinText->get<std::string>();
-        if (stdinValue.size() > kMaxAnalysisScriptStdinBytes) {
-            return "run_analysis_script rejected: stdin_text is "
-                + std::to_string(stdinValue.size())
-                + " bytes, exceeding the ReArk host limit of "
-                + std::to_string(kMaxAnalysisScriptStdinBytes)
-                + " bytes.";
-        }
-    }
-
-    if (const auto timeoutMs = arguments.find("timeout_ms");
-        timeoutMs != arguments.end() && !timeoutMs->is_null()) {
-        if (!timeoutMs->is_number_integer()) {
-            return "Invalid run_analysis_script arguments: timeout_ms must be an integer.";
-        }
-        long long timeoutValue = 0;
-        try {
-            timeoutValue = timeoutMs->get<long long>();
-        } catch (const std::exception&) {
-            return "Invalid run_analysis_script arguments: timeout_ms must be between 1 and "
-                + std::to_string(kMaxAnalysisScriptTimeoutMs)
-                + ".";
-        }
-        if (timeoutValue < 1 || timeoutValue > kMaxAnalysisScriptTimeoutMs) {
-            return "Invalid run_analysis_script arguments: timeout_ms must be between 1 and "
-                + std::to_string(kMaxAnalysisScriptTimeoutMs)
-                + ".";
         }
     }
 

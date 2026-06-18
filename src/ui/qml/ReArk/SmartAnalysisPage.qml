@@ -197,10 +197,11 @@ Rectangle {
 
             readonly property bool userMessage: messageRole === "user"
             readonly property bool streaming: messageState === "streaming"
+            readonly property bool activeAssistantMessage: streaming && !userMessage
             readonly property bool copied: root.copiedMessageIndex === index
-            readonly property real maxBubbleWidth: Math.min(
-                root.contentWidth,
-                messageDelegate.userMessage ? Math.max(220, root.contentWidth * 0.78) : 760)
+            readonly property real maxBubbleWidth: messageDelegate.userMessage
+                                                   ? Math.max(220, root.contentWidth * 0.78)
+                                                   : root.contentWidth
 
             width: chatList.width
             height: messageColumn.implicitHeight
@@ -237,6 +238,7 @@ Rectangle {
                                      ? compactWidth
                                      : messageDelegate.maxBubbleWidth
                     implicitHeight: messageBody.implicitHeight + 22
+                                    + (messageDelegate.activeAssistantMessage ? streamStatus.implicitHeight + 10 : 0)
 
                     Rectangle {
                         anchors.fill: parent
@@ -259,7 +261,25 @@ Rectangle {
                         radius: 8
                         color: messageBubble.bubbleColor
                         border.width: messageDelegate.userMessage ? 0 : 1
-                        border.color: root.borderColor
+                        border.color: messageDelegate.activeAssistantMessage
+                                      ? (root.darkTheme ? "#4b667c" : "#9fc7e8")
+                                      : root.borderColor
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 1
+                        anchors.rightMargin: 1
+                        anchors.bottomMargin: 1
+                        height: streamStatus.implicitHeight + 12
+                        radius: 7
+                        color: root.darkTheme ? "#161d23" : "#eef6fc"
+                        opacity: messageDelegate.activeAssistantMessage ? 1 : 0
+                        visible: opacity > 0
+
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
                     }
 
                     Text {
@@ -282,6 +302,8 @@ Rectangle {
                         anchors.leftMargin: 15
                         anchors.rightMargin: 15
                         anchors.topMargin: 11
+                        anchors.bottom: messageDelegate.activeAssistantMessage ? streamStatus.top : parent.bottom
+                        anchors.bottomMargin: messageDelegate.activeAssistantMessage ? 8 : 11
                         markdown: messageDelegate.messageText
                         markdownEnabled: !messageDelegate.userMessage
                         streaming: messageDelegate.streaming
@@ -291,6 +313,60 @@ Rectangle {
                         accentColor: root.accentColor
                         textPixelSize: 13
                         clipboardController: root.agentController
+                    }
+
+                    RowLayout {
+                        id: streamStatus
+
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: 15
+                        anchors.rightMargin: 15
+                        anchors.bottomMargin: 9
+                        visible: messageDelegate.activeAssistantMessage
+                        spacing: 7
+
+                        Item {
+                            Layout.preferredWidth: 15
+                            Layout.preferredHeight: 15
+
+                            Rectangle {
+                                id: pulseDot
+
+                                anchors.centerIn: parent
+                                width: 7
+                                height: 7
+                                radius: 4
+                                color: root.accentColor
+                                opacity: 0.82
+                                scale: 0.82
+
+                                SequentialAnimation on scale {
+                                    running: messageDelegate.activeAssistantMessage
+                                    loops: Animation.Infinite
+                                    NumberAnimation { to: 1.18; duration: 520; easing.type: Easing.OutCubic }
+                                    NumberAnimation { to: 0.82; duration: 520; easing.type: Easing.InOutCubic }
+                                }
+
+                                SequentialAnimation on opacity {
+                                    running: messageDelegate.activeAssistantMessage
+                                    loops: Animation.Infinite
+                                    NumberAnimation { to: 1.0; duration: 520; easing.type: Easing.OutCubic }
+                                    NumberAnimation { to: 0.58; duration: 520; easing.type: Easing.InOutCubic }
+                                }
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: root.agentRunning && root.agentStatus.length > 0
+                                  ? root.agentStatus
+                                  : qsTr("Working...")
+                            color: root.secondaryTextColor
+                            font.pixelSize: 11
+                            elide: Text.ElideRight
+                        }
                     }
                 }
 
