@@ -120,6 +120,11 @@
         <translation>Agent 工具调用轮次已用尽，尚未生成最终答案。</translation>
     </message>
     <message>
+        <location filename="../../src/controller/AgentController.cpp" line="50"/>
+        <source>Agent reached the extended tool call limit. The evidence above has been saved so follow-up analysis can continue without losing context.</source>
+        <translation>Agent 已达到扩展工具调用上限。上方证据已保存，后续分析可以在不丢失上下文的情况下继续。</translation>
+    </message>
+    <message>
         <location filename="../../src/controller/AgentController.cpp" line="519"/>
         <source>Missing API key. Configure Agent settings or set REARK_LLM_API_KEY / OPENROUTER_API_KEY.</source>
         <translation>缺少 API Key。请在 Agent 设置中配置，或设置 REARK_LLM_API_KEY / OPENROUTER_API_KEY。</translation>

@@ -46,6 +46,12 @@ QString toolRoundBudgetExceededMessage()
     return AgentController::tr("Agent tool call rounds were exhausted before a final answer was produced.");
 }
 
+QString toolRoundBudgetExceededSavedMessage()
+{
+    return AgentController::tr(
+        "Agent reached the extended tool call limit. The evidence above has been saved so follow-up analysis can continue without losing context.");
+}
+
 bool isToolRoundBudgetExceededText(const QString& value)
 {
     const QString folded = value.trimmed().toCaseFolded();
@@ -65,6 +71,13 @@ bool isToolRoundBudgetExceededText(const QString& value)
 bool isLegacyToolRoundBudgetError(std::error_code ec)
 {
     return ec == std::make_error_code(std::errc::resource_unavailable_try_again);
+}
+
+bool isToolRoundBudgetExceededError(std::error_code ec, const QString& message)
+{
+    return isToolRoundBudgetExceededText(message)
+        || isToolRoundBudgetExceededText(QString::fromStdString(ec.message()))
+        || isLegacyToolRoundBudgetError(ec);
 }
 
 std::string toStdString(const QString& value)
@@ -87,7 +100,7 @@ std::shared_ptr<wuwe::llm_client> createLlmClient(const AgentSettings& settings)
         .api_key = toStdString(settings.apiKey),
         .require_api_key = settings.requireApiKey,
         .model = toStdString(settings.model),
-        .timeout = 30000,
+        .timeout = 120000,
         .referer_url = "https://www.cppmore.com/",
         .app_title = "ReArk"
     };
@@ -894,14 +907,26 @@ QString reasoningErrorMessage(const wuwe::agent::reasoning::reasoning_error& err
 
     if (isToolRoundBudgetExceededText(code)
         || isToolRoundBudgetExceededText(message)
-        || isToolRoundBudgetExceededText(underlying)
-        || (error.underlying_error && isLegacyToolRoundBudgetError(error.underlying_error))) {
+        || (error.underlying_error && isToolRoundBudgetExceededError(error.underlying_error, underlying))) {
         return toolRoundBudgetExceededMessage();
     }
 
     return error.underlying_error
         ? agentErrorMessage(error.underlying_error, message)
         : message;
+}
+
+bool isToolRoundBudgetExceededError(const wuwe::agent::reasoning::reasoning_error& error)
+{
+    const QString code = QString::fromUtf8(wuwe::agent::reasoning::to_string(error.code));
+    const QString message = QString::fromStdString(error.message);
+    const QString underlying = error.underlying_error
+        ? QString::fromStdString(error.underlying_error.message())
+        : QString();
+
+    return isToolRoundBudgetExceededText(code)
+        || isToolRoundBudgetExceededText(message)
+        || (error.underlying_error && isToolRoundBudgetExceededError(error.underlying_error, underlying));
 }
 
 wuwe::agent::reasoning::reasoning_policy rearkReasoningPolicy(const std::string& input)
@@ -913,11 +938,11 @@ wuwe::agent::reasoning::reasoning_policy rearkReasoningPolicy(const std::string&
         .has_tools = true,
         .requires_tools = false
     });
-    policy.budget.max_model_calls = 12;
-    policy.budget.max_tool_calls = 36;
-    policy.budget.max_tool_rounds = 10;
-    policy.budget.max_steps = 10;
-    policy.budget.timeout = std::chrono::milliseconds { 180000 };
+    policy.budget.max_model_calls = 36;
+    policy.budget.max_tool_calls = 128;
+    policy.budget.max_tool_rounds = 32;
+    policy.budget.max_steps = 48;
+    policy.budget.timeout = std::chrono::milliseconds { 600000 };
     return policy;
 }
 #endif
@@ -1077,12 +1102,16 @@ void AgentController::ask(const QString& question)
         QStringLiteral("You are an expert HarmonyOS NEXT application reverse engineering assistant embedded in ReArk. "
             "Use ReArk tools when you need package, source, disassembly, resource, signature, or entry-point data, "
             "but do not keep calling tools after you have enough evidence to answer. "
+            "Do not stream plans, intentions, or next-action narration such as 'I will inspect' or 'let me search'; "
+            "use tools silently, then answer with confirmed findings, uncertainty, and the next concrete action only when needed. "
+            "For hard reverse-engineering, CTF, password, flag, hash, or credential tasks, keep investigating until you have a concrete answer "
+            "or all relevant available evidence is exhausted; avoid stopping after a high-level architecture summary. "
             "For overview questions such as app purpose, features, entry points, pages, permissions, or architecture, "
             "first use the current snapshot, important files, and entry-point list below, then call only the tools that are truly needed. "
             "If a tool reports that a file is unavailable, unsupported, or not matched, do not retry the same unavailable path repeatedly; "
             "answer from the available evidence and clearly state what could not be read. "
             "Always produce a useful final answer, even if some optional evidence is missing. "
-            "Match the language of the user's latest question for both intermediate process narration and final answers. "
+            "Match the language of the user's latest question for final answers. "
             "If the user writes in Chinese, answer in Chinese; if the user writes in French, answer in French; "
             "if the user writes in any other language, answer in that language when reasonably possible. "
             "For mixed-language questions, use the user's dominant natural language. "
@@ -1193,12 +1222,23 @@ void AgentController::ask(const QString& question)
         if (!self) {
             return;
         }
+        const bool toolBudgetExceeded = isToolRoundBudgetExceededError(error);
         QString message = reasoningErrorMessage(error);
         if (message.isEmpty()) {
             message = AgentController::tr("Analysis failed.");
         }
-        QMetaObject::invokeMethod(self.data(), [self, message] {
+        QMetaObject::invokeMethod(self.data(), [self, message, toolBudgetExceeded] {
             if (!self) {
+                return;
+            }
+            if (toolBudgetExceeded) {
+                self->setErrorMessage({});
+                self->flushPendingAssistantDelta();
+                self->appendToActiveAssistantMessage(QStringLiteral("\n\n") + toolRoundBudgetExceededSavedMessage());
+                self->finishActiveAssistantMessage(toolRoundBudgetExceededSavedMessage());
+                self->setRunning(false);
+                self->setStatus(AgentController::tr("Ready"));
+                self->resetRun();
                 return;
             }
             self->setErrorMessage(message);
@@ -1232,7 +1272,7 @@ void AgentController::ask(const QString& question)
     runtime_->runner = std::make_unique<wuwe::llm_agent_runner>(
         *runtime_->client,
         runtime_->provider,
-        10);
+        32);
 
     wuwe::llm_request request;
     request.model = toStdString(settings.model);
@@ -1312,9 +1352,21 @@ void AgentController::ask(const QString& question)
             if (!self) {
                 return;
             }
-            const QString msg = agentErrorMessage(ec, fromStringView(message));
-            QMetaObject::invokeMethod(self.data(), [self, msg] {
+            const QString rawMessage = fromStringView(message);
+            const bool toolBudgetExceeded = isToolRoundBudgetExceededError(ec, rawMessage);
+            const QString msg = agentErrorMessage(ec, rawMessage);
+            QMetaObject::invokeMethod(self.data(), [self, msg, toolBudgetExceeded] {
                 if (self) {
+                    if (toolBudgetExceeded) {
+                        self->setErrorMessage({});
+                        self->flushPendingAssistantDelta();
+                        self->appendToActiveAssistantMessage(QStringLiteral("\n\n") + toolRoundBudgetExceededSavedMessage());
+                        self->finishActiveAssistantMessage(toolRoundBudgetExceededSavedMessage());
+                        self->setStatus(AgentController::tr("Ready"));
+                        self->setRunning(false);
+                        self->resetRun();
+                        return;
+                    }
                     self->setErrorMessage(msg);
                     self->failActiveAssistantMessage();
                     self->setStatus(msg);

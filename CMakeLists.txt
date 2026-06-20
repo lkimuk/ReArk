@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
-    add_compile_options(/Zc:__cplusplus /permissive-)
+    add_compile_options(/Zc:__cplusplus /permissive- /FS)
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml QuickControls2 Concurrent Multimedia Network LinguistTools)
