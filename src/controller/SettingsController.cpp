@@ -1,5 +1,7 @@
 #include "controller/SettingsController.h"
 
+#include "controller/PythonRuntimeResolver.h"
+
 SettingsController::SettingsController(QObject* parent)
     : QObject(parent)
 {
@@ -84,6 +86,28 @@ void SettingsController::setAgentRequireApiKey(bool agentRequireApiKey)
     emit agentSettingsChanged();
 }
 
+QString SettingsController::agentPythonInterpreterPath() const
+{
+    return agentPythonInterpreterPath_;
+}
+
+void SettingsController::setAgentPythonInterpreterPath(const QString& agentPythonInterpreterPath)
+{
+    const QString trimmed = agentPythonInterpreterPath.trimmed();
+    if (agentPythonInterpreterPath_ == trimmed) {
+        return;
+    }
+
+    agentPythonInterpreterPath_ = trimmed;
+    emit agentSettingsChanged();
+}
+
+QVariantMap SettingsController::agentPythonRuntime() const
+{
+    return PythonRuntimeResolver::toVariantMap(
+        PythonRuntimeResolver::resolve(agentPythonInterpreterPath_));
+}
+
 QString SettingsController::agentEmbeddingBaseUrl() const
 {
     return agentEmbeddingBaseUrl_;
@@ -163,6 +187,7 @@ void SettingsController::reload()
     const QString previousApiKey = agentApiKey_;
     const QString previousModel = agentModel_;
     const bool previousRequireApiKey = agentRequireApiKey_;
+    const QString previousPythonInterpreterPath = agentPythonInterpreterPath_;
     const QString previousEmbeddingBaseUrl = agentEmbeddingBaseUrl_;
     const QString previousEmbeddingApiKey = agentEmbeddingApiKey_;
     const QString previousEmbeddingModel = agentEmbeddingModel_;
@@ -175,6 +200,7 @@ void SettingsController::reload()
         || agentApiKey_ != previousApiKey
         || agentModel_ != previousModel
         || agentRequireApiKey_ != previousRequireApiKey
+        || agentPythonInterpreterPath_ != previousPythonInterpreterPath
         || agentEmbeddingBaseUrl_ != previousEmbeddingBaseUrl
         || agentEmbeddingApiKey_ != previousEmbeddingApiKey
         || agentEmbeddingModel_ != previousEmbeddingModel
@@ -205,6 +231,7 @@ bool SettingsController::saveAgentSettings(
     const QString& apiKey,
     const QString& model,
     bool requireApiKey,
+    const QString& pythonInterpreterPath,
     const QString& embeddingBaseUrl,
     const QString& embeddingApiKey,
     const QString& embeddingModel,
@@ -216,6 +243,7 @@ bool SettingsController::saveAgentSettings(
         .apiKey = apiKey,
         .model = model.trimmed(),
         .requireApiKey = requireApiKey,
+        .pythonInterpreterPath = pythonInterpreterPath.trimmed(),
         .embeddingBaseUrl = embeddingBaseUrl.trimmed(),
         .embeddingApiKey = embeddingApiKey,
         .embeddingModel = embeddingModel.trimmed(),
@@ -263,6 +291,7 @@ void SettingsController::loadAgentSettings()
     agentApiKey_ = settings.apiKey;
     agentModel_ = settings.model;
     agentRequireApiKey_ = settings.requireApiKey;
+    agentPythonInterpreterPath_ = settings.pythonInterpreterPath;
     agentEmbeddingBaseUrl_ = settings.embeddingBaseUrl;
     agentEmbeddingApiKey_ = settings.embeddingApiKey;
     agentEmbeddingModel_ = settings.embeddingModel;
@@ -277,6 +306,7 @@ void SettingsController::setAgentSettings(const AgentSettings& settings)
         || agentApiKey_ != settings.apiKey
         || agentModel_ != settings.model
         || agentRequireApiKey_ != settings.requireApiKey
+        || agentPythonInterpreterPath_ != settings.pythonInterpreterPath
         || agentEmbeddingBaseUrl_ != settings.embeddingBaseUrl
         || agentEmbeddingApiKey_ != settings.embeddingApiKey
         || agentEmbeddingModel_ != settings.embeddingModel
@@ -291,6 +321,7 @@ void SettingsController::setAgentSettings(const AgentSettings& settings)
     agentApiKey_ = settings.apiKey;
     agentModel_ = settings.model;
     agentRequireApiKey_ = settings.requireApiKey;
+    agentPythonInterpreterPath_ = settings.pythonInterpreterPath;
     agentEmbeddingBaseUrl_ = settings.embeddingBaseUrl;
     agentEmbeddingApiKey_ = settings.embeddingApiKey;
     agentEmbeddingModel_ = settings.embeddingModel;

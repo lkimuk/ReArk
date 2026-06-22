@@ -11,6 +11,7 @@ struct AgentSettings {
     QString apiKey;
     QString model;
     bool requireApiKey = true;
+    QString pythonInterpreterPath;
     QString embeddingBaseUrl;
     QString embeddingApiKey;
     QString embeddingModel;
@@ -35,6 +36,7 @@ public:
     [[nodiscard]] static QString defaultBaseUrl();
     [[nodiscard]] static QString defaultApiKey();
     [[nodiscard]] static QString defaultModel();
+    [[nodiscard]] static QString defaultPythonInterpreterPath();
     [[nodiscard]] static bool defaultRequireApiKey(const QString& baseUrl);
     [[nodiscard]] static QString defaultEmbeddingBaseUrl();
     [[nodiscard]] static QString defaultEmbeddingApiKey();

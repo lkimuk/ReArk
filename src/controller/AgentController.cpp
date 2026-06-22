@@ -20,6 +20,7 @@
 #include "controller/AgentSettings.h"
 #include "controller/AgentKnowledgeController.h"
 #include "controller/DecompilerController.h"
+#include "controller/PythonRuntimeResolver.h"
 #include "model/AgentMessageModel.h"
 
 #include <QClipboard>
@@ -160,20 +161,6 @@ constexpr std::size_t kMaxAnalysisScriptStdinBytes = 256 * 1024;
 constexpr std::size_t kMaxAnalysisScriptArgumentsBytes =
     kMaxAnalysisScriptCodeBytes + kMaxAnalysisScriptStdinBytes + 4096;
 constexpr int kMaxAnalysisScriptTimeoutMs = 5000;
-
-std::filesystem::path toFilesystemPath(const QString& value)
-{
-    return std::filesystem::path(value.toStdWString());
-}
-
-std::filesystem::path rearkPythonInterpreter()
-{
-    const QString configured = qEnvironmentVariable("REARK_PYTHON_PATH").trimmed();
-    if (!configured.isEmpty()) {
-        return toFilesystemPath(configured);
-    }
-    return std::filesystem::path(L"python");
-}
 
 wuwe::agent::execution::execution_policy rearkExecutionPolicy(const std::filesystem::path& workdir)
 {
@@ -1509,12 +1496,14 @@ void AgentController::ask(const QString& question)
 #ifdef REARK_HAS_WUWE_EXECUTION
     runtime_->executionWorkdir = std::make_unique<QTemporaryDir>(
         QDir::temp().filePath(QStringLiteral("ReArk-agent-analysis-XXXXXX")));
-    if (runtime_->executionWorkdir->isValid()) {
+    const PythonRuntimeProbe pythonRuntime = PythonRuntimeResolver::resolve(settings.pythonInterpreterPath);
+    if (runtime_->executionWorkdir->isValid()
+        && pythonRuntime.status == PythonRuntimeProbe::Status::Ok) {
         namespace execution = wuwe::agent::execution;
-        const auto workdir = toFilesystemPath(runtime_->executionWorkdir->path());
+        const auto workdir = PythonRuntimeResolver::toFilesystemPath(runtime_->executionWorkdir->path());
         runtime_->executionRuntime = std::make_unique<execution::execution_runtime>(
             execution::make_controlled_process_backend(execution::controlled_process_backend_config {
-                .python_interpreter = rearkPythonInterpreter(),
+                .python_interpreter = PythonRuntimeResolver::toFilesystemPath(pythonRuntime.resolvedPath),
                 .fallback_workdir = workdir
             }),
             rearkExecutionPolicy(workdir),

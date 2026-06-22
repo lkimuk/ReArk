@@ -27,6 +27,8 @@ qt_add_executable(${PROJECT_NAME}
     controller/AgentKnowledgeController.h
     controller/AgentController.cpp
     controller/AgentController.h
+    controller/PythonRuntimeResolver.cpp
+    controller/PythonRuntimeResolver.h
     controller/LanguageController.cpp
     controller/LanguageController.h
     controller/SettingsController.cpp

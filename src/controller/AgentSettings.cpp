@@ -27,6 +27,7 @@ constexpr auto kAgentApiKeyKey = "Agent/ApiKey";
 constexpr auto kAgentProtectedApiKeyKey = "Agent/ApiKeyProtected";
 constexpr auto kAgentModelKey = "Agent/Model";
 constexpr auto kAgentRequireApiKeyKey = "Agent/RequireApiKey";
+constexpr auto kAgentPythonInterpreterPathKey = "Agent/PythonInterpreterPath";
 constexpr auto kAgentEmbeddingBaseUrlKey = "Agent/EmbeddingBaseUrl";
 constexpr auto kAgentEmbeddingApiKeyKey = "Agent/EmbeddingApiKey";
 constexpr auto kAgentProtectedEmbeddingApiKeyKey = "Agent/EmbeddingApiKeyProtected";
@@ -493,6 +494,9 @@ AgentSettings AgentSettingsStore::load()
     result.embeddingBaseUrl = settings.value(
         QString::fromLatin1(kAgentEmbeddingBaseUrlKey),
         defaultEmbeddingBaseUrl()).toString().trimmed();
+    result.pythonInterpreterPath = settings.value(
+        QString::fromLatin1(kAgentPythonInterpreterPathKey),
+        defaultPythonInterpreterPath()).toString().trimmed();
     result.embeddingApiKey = loadProtectedKey(
         settings,
         kAgentProtectedEmbeddingApiKeyKey,
@@ -517,6 +521,9 @@ bool AgentSettingsStore::save(const AgentSettings& settings)
     qsettings.setValue(QString::fromLatin1(kAgentBaseUrlKey), settings.baseUrl.trimmed());
     qsettings.setValue(QString::fromLatin1(kAgentModelKey), settings.model.trimmed());
     qsettings.setValue(QString::fromLatin1(kAgentRequireApiKeyKey), settings.requireApiKey);
+    qsettings.setValue(
+        QString::fromLatin1(kAgentPythonInterpreterPathKey),
+        settings.pythonInterpreterPath.trimmed());
     qsettings.setValue(QString::fromLatin1(kAgentEmbeddingBaseUrlKey), settings.embeddingBaseUrl.trimmed());
     qsettings.setValue(QString::fromLatin1(kAgentEmbeddingModelKey), settings.embeddingModel.trimmed());
     qsettings.setValue(QString::fromLatin1(kAgentEmbeddingRequireApiKeyKey), settings.embeddingRequireApiKey);
@@ -547,6 +554,7 @@ void AgentSettingsStore::resetRuntimeSettings()
     settings.remove(QString::fromLatin1(kAgentProtectedApiKeyKey));
     settings.remove(QString::fromLatin1(kAgentModelKey));
     settings.remove(QString::fromLatin1(kAgentRequireApiKeyKey));
+    settings.remove(QString::fromLatin1(kAgentPythonInterpreterPathKey));
     settings.remove(QStringLiteral("Agent/Providers"));
 }
 
@@ -725,6 +733,11 @@ QString AgentSettingsStore::defaultModel()
         return provider->defaultModel;
     }
     return QString::fromLatin1(kDefaultModel);
+}
+
+QString AgentSettingsStore::defaultPythonInterpreterPath()
+{
+    return {};
 }
 
 bool AgentSettingsStore::defaultRequireApiKey(const QString& baseUrl)

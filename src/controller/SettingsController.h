@@ -15,6 +15,8 @@ class SettingsController : public QObject {
     Q_PROPERTY(QString agentApiKey READ agentApiKey WRITE setAgentApiKey NOTIFY agentSettingsChanged)
     Q_PROPERTY(QString agentModel READ agentModel WRITE setAgentModel NOTIFY agentSettingsChanged)
     Q_PROPERTY(bool agentRequireApiKey READ agentRequireApiKey WRITE setAgentRequireApiKey NOTIFY agentSettingsChanged)
+    Q_PROPERTY(QString agentPythonInterpreterPath READ agentPythonInterpreterPath WRITE setAgentPythonInterpreterPath NOTIFY agentSettingsChanged)
+    Q_PROPERTY(QVariantMap agentPythonRuntime READ agentPythonRuntime NOTIFY agentSettingsChanged)
     Q_PROPERTY(QString agentEmbeddingBaseUrl READ agentEmbeddingBaseUrl WRITE setAgentEmbeddingBaseUrl NOTIFY agentSettingsChanged)
     Q_PROPERTY(QString agentEmbeddingApiKey READ agentEmbeddingApiKey WRITE setAgentEmbeddingApiKey NOTIFY agentSettingsChanged)
     Q_PROPERTY(QString agentEmbeddingModel READ agentEmbeddingModel WRITE setAgentEmbeddingModel NOTIFY agentSettingsChanged)
@@ -40,6 +42,10 @@ public:
     [[nodiscard]] bool agentRequireApiKey() const;
     void setAgentRequireApiKey(bool agentRequireApiKey);
 
+    [[nodiscard]] QString agentPythonInterpreterPath() const;
+    void setAgentPythonInterpreterPath(const QString& agentPythonInterpreterPath);
+    [[nodiscard]] QVariantMap agentPythonRuntime() const;
+
     [[nodiscard]] QString agentEmbeddingBaseUrl() const;
     void setAgentEmbeddingBaseUrl(const QString& agentEmbeddingBaseUrl);
 
@@ -64,6 +70,7 @@ public:
         const QString& apiKey,
         const QString& model,
         bool requireApiKey,
+        const QString& pythonInterpreterPath,
         const QString& embeddingBaseUrl,
         const QString& embeddingApiKey,
         const QString& embeddingModel,
@@ -87,6 +94,7 @@ private:
     QString agentBaseUrl_;
     QString agentApiKey_;
     QString agentModel_;
+    QString agentPythonInterpreterPath_;
     QString agentEmbeddingBaseUrl_;
     QString agentEmbeddingApiKey_;
     QString agentEmbeddingModel_;

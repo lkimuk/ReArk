@@ -37,6 +37,9 @@ Rectangle {
     readonly property string validationMessage: settingsController !== null
             ? settingsController.agentValidationMessage
             : ""
+    readonly property var pythonRuntime: settingsController !== null
+            ? settingsController.agentPythonRuntime
+            : ({})
 
     color: pageColor
 
@@ -312,6 +315,32 @@ Rectangle {
                                     id: requireApiKeyBox
                                     text: qsTr("Require API key")
                                     font.pixelSize: 13
+                                }
+                            }
+
+                            SettingRow {
+                                id: pythonRuntimeRow
+
+                                title: qsTr("Agent: Python Runtime")
+                                description: qsTr("Optional interpreter path for local analysis scripts. Leave empty to use ReArk's automatic resolver.")
+
+                                ColumnLayout {
+                                    spacing: 7
+
+                                    SettingsTextField {
+                                        id: pythonInterpreterPathField
+                                        Layout.preferredWidth: 460
+                                    }
+
+                                    Label {
+                                        Layout.preferredWidth: 460
+                                        text: root.pythonRuntimeSummary()
+                                        color: root.pythonRuntimeOk()
+                                               ? root.secondaryTextColor
+                                               : root.dangerTextColor
+                                        font.pixelSize: 12
+                                        wrapMode: Text.WordWrap
+                                    }
                                 }
                             }
 
@@ -686,6 +715,7 @@ Rectangle {
         apiKeyField.text = settingsController.agentApiKey
         requireApiKeyBox.checked = settingsController.agentRequireApiKey
         embeddingBaseUrlField.text = settingsController.agentEmbeddingBaseUrl
+        pythonInterpreterPathField.text = settingsController.agentPythonInterpreterPath
         embeddingModelField.text = settingsController.agentEmbeddingModel
         embeddingApiKeyField.text = settingsController.agentEmbeddingApiKey
         embeddingRequireApiKeyBox.checked = settingsController.agentEmbeddingRequireApiKey
@@ -709,6 +739,7 @@ Rectangle {
             || modelRow.visible
             || apiKeyRow.visible
             || requireApiKeyRow.visible
+            || pythonRuntimeRow.visible
     }
 
     function anyKnowledgeSettingVisible() {
@@ -716,6 +747,42 @@ Rectangle {
             || embeddingModelRow.visible
             || embeddingApiKeyRow.visible
             || embeddingRequireApiKeyRow.visible
+    }
+
+    function pythonRuntimeOk() {
+        if (settingsController === null) {
+            return false
+        }
+        const runtime = root.pythonRuntime
+        return runtime !== undefined && runtime !== null && runtime.ok === true
+    }
+
+    function pythonRuntimeSummary() {
+        if (settingsController === null) {
+            return ""
+        }
+
+        const runtime = root.pythonRuntime
+        if (runtime === undefined || runtime === null) {
+            return qsTr("Python runtime status is unavailable.")
+        }
+
+        const status = runtime.status !== undefined ? runtime.status : qsTr("Unavailable")
+        const detail = runtime.detail !== undefined ? runtime.detail : ""
+        const version = runtime.version !== undefined && runtime.version.length > 0
+                ? qsTr("Python %1").arg(runtime.version)
+                : status
+        const source = runtime.source !== undefined && runtime.source.length > 0
+                ? runtime.source
+                : qsTr("auto")
+        const path = runtime.resolvedPath !== undefined && runtime.resolvedPath.length > 0
+                ? runtime.resolvedPath
+                : ""
+
+        if (runtime.ok === true && path.length > 0) {
+            return qsTr("%1 · %2 · %3").arg(version).arg(source).arg(path)
+        }
+        return detail.length > 0 ? qsTr("%1 · %2").arg(status).arg(detail) : status
     }
 
     function saveAgentSettings() {
@@ -730,6 +797,7 @@ Rectangle {
             apiKeyField.text,
             modelField.text,
             requireApiKeyBox.checked,
+            pythonInterpreterPathField.text,
             embeddingBaseUrlField.text,
             embeddingApiKeyField.text,
             embeddingModelField.text,
