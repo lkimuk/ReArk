@@ -3,6 +3,7 @@
 
 #include <QAbstractListModel>
 #include <QString>
+#include <QVariantList>
 
 class AgentMessageModel : public QAbstractListModel {
     Q_OBJECT
@@ -12,7 +13,8 @@ public:
         MessageRoleRole = Qt::UserRole + 1,
         MessageTextRole,
         MessageStateRole,
-        MessageTimeRole
+        MessageTimeRole,
+        MessageActivitiesRole
     };
     Q_ENUM(MessageRole)
 
@@ -26,6 +28,7 @@ public:
     void clear();
     void removeMessage(int row);
     void appendText(int row, const QString& text);
+    void setActivities(int row, const QVariantList& activities);
     void finishStreaming(int row, const QString& fallbackText);
     void failStreaming(int row);
 
@@ -35,6 +38,7 @@ private:
         QString text;
         QString state;
         QString time;
+        QVariantList activities;
     };
     QList<Message> messages_;
 };

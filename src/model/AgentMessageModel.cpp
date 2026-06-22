@@ -30,6 +30,8 @@ QVariant AgentMessageModel::data(const QModelIndex& index, int role) const
         return message.state;
     case MessageTimeRole:
         return message.time;
+    case MessageActivitiesRole:
+        return message.activities;
     default:
         return {};
     }
@@ -41,7 +43,8 @@ QHash<int, QByteArray> AgentMessageModel::roleNames() const
         { MessageRoleRole, "messageRole" },
         { MessageTextRole, "messageText" },
         { MessageStateRole, "messageState" },
-        { MessageTimeRole, "messageTime" }
+        { MessageTimeRole, "messageTime" },
+        { MessageActivitiesRole, "messageActivities" }
     };
 }
 
@@ -57,7 +60,8 @@ int AgentMessageModel::appendMessage(
         .role = role,
         .text = text,
         .state = state,
-        .time = time
+        .time = time,
+        .activities = {}
     });
     endInsertRows();
     return row;
@@ -94,6 +98,17 @@ void AgentMessageModel::appendText(int row, const QString& text)
     messages_[row].text += text;
     const QModelIndex changed = index(row);
     emit dataChanged(changed, changed, { MessageTextRole, Qt::DisplayRole });
+}
+
+void AgentMessageModel::setActivities(int row, const QVariantList& activities)
+{
+    if (row < 0 || row >= messages_.size()) {
+        return;
+    }
+
+    messages_[row].activities = activities;
+    const QModelIndex changed = index(row);
+    emit dataChanged(changed, changed, { MessageActivitiesRole });
 }
 
 void AgentMessageModel::finishStreaming(int row, const QString& fallbackText)

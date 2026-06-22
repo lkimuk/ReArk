@@ -64,7 +64,13 @@ private:
     void queueAssistantDelta(const QString& text);
     void flushPendingAssistantDelta();
     void appendToActiveAssistantMessage(const QString& text);
+    void recordActiveAssistantActivity(
+        const QString& type,
+        const QString& title,
+        const QString& detail = {},
+        const QString& state = {});
     void finishActiveAssistantMessage(const QString& fallbackText = {});
+    void finishInterruptedAssistantMessage(const QString& notice);
     void failActiveAssistantMessage();
     void rebuildTranscript();
     void appendTranscript(const QString& text);

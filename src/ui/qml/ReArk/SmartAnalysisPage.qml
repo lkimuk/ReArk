@@ -37,6 +37,9 @@ Rectangle {
     readonly property color pageTopColor: darkTheme ? "#1e1e1e" : "#e8f0fb"
     readonly property color pageBottomColor: darkTheme ? "#171819" : "#f4f8fc"
     readonly property color panelColor: darkTheme ? "#1b1d20" : "#fbfcff"
+    readonly property color composerColor: darkTheme ? "#202326" : "#ffffff"
+    readonly property color composerBorderColor: darkTheme ? "#353a41" : "#d7dfe9"
+    readonly property color composerFocusBorderColor: darkTheme ? "#4b5563" : "#b8c5d8"
     readonly property color userBubbleColor: darkTheme ? "#1f4d78" : "#dbeafe"
     readonly property color assistantBubbleColor: darkTheme ? "#1b1d20" : "#ffffff"
     readonly property color primaryTextColor: darkTheme ? "#e7e7e7" : "#0f172a"
@@ -437,15 +440,15 @@ Rectangle {
         height: root.hasMessages ? 124 : 130
         anchors.horizontalCenter: parent.horizontalCenter
         radius: 8
-        color: root.panelColor
+        color: root.composerColor
         border.width: 1
-        border.color: promptInput.activeFocus ? root.accentColor : root.borderColor
+        border.color: promptInput.activeFocus ? root.composerFocusBorderColor : root.composerBorderColor
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled: true
-            shadowBlur: 0.55
-            shadowOpacity: root.panelShadowOpacity
-            shadowVerticalOffset: 5
+            shadowBlur: root.darkTheme ? 0.32 : 0.48
+            shadowOpacity: root.darkTheme ? 0.28 : root.panelShadowOpacity
+            shadowVerticalOffset: root.darkTheme ? 2 : 5
         }
 
         states: [
@@ -672,8 +675,7 @@ Rectangle {
             elide: Text.ElideRight
             visible: text.length > 0
                 && (!root.agentAvailable
-                    || root.agentRunning
-                    || !toolRow.visible)
+                    || (root.agentRunning && !root.hasMessages))
         }
 
         Row {
@@ -684,7 +686,7 @@ Rectangle {
             anchors.leftMargin: 26
             anchors.bottomMargin: 23
             spacing: 12
-            visible: root.agentAvailable && !root.agentRunning
+            visible: root.agentAvailable
 
             AbstractButton {
                 id: referenceButton
@@ -693,9 +695,11 @@ Rectangle {
                 height: 18
                 padding: 0
                 hoverEnabled: true
-                enabled: root.agentKnowledgeController !== null && !root.referenceBusy
+                enabled: root.agentKnowledgeController !== null && !root.referenceBusy && !root.agentRunning
                 opacity: enabled ? 1.0 : 0.42
-                ToolTip.text: root.referenceBusy ? root.referenceStatus : qsTr("Add attachment")
+                ToolTip.text: root.agentRunning
+                              ? qsTr("Wait for the current response to finish")
+                              : (root.referenceBusy ? root.referenceStatus : qsTr("Add attachment"))
                 ToolTip.visible: hovered
                 ToolTip.delay: 450
 
@@ -745,14 +749,28 @@ Rectangle {
             anchors.bottom: parent.bottom
             anchors.rightMargin: 16
             anchors.bottomMargin: 13
-            diameter: 38
-            iconSize: 17
-            iconName: root.agentRunning ? "close" : "arrow-up"
-            backgroundColor: root.accentColor
-            hoverColor: root.accentHoverColor
-            pressedColor: root.accentPressedColor
-            disabledColor: root.darkTheme ? "#667181" : "#b8c2d3"
-            iconColor: "#ffffff"
+            diameter: 36
+            iconSize: 16
+            iconName: root.agentRunning ? "stop" : "arrow-up"
+            backgroundColor: root.agentRunning
+                ? (root.darkTheme ? "#d4d8de" : "#111827")
+                : (root.darkTheme ? "#d4d8de" : "#111827")
+            hoverColor: root.agentRunning
+                ? (root.darkTheme ? "#e0e4ea" : "#030712")
+                : (root.darkTheme ? "#e0e4ea" : "#030712")
+            pressedColor: root.agentRunning
+                ? (root.darkTheme ? "#bfc5ce" : "#374151")
+                : (root.darkTheme ? "#bfc5ce" : "#374151")
+            disabledColor: root.darkTheme ? "#3b414a" : "#e5e7eb"
+            iconColor: enabled
+                ? (root.darkTheme ? "#18181b" : "#ffffff")
+                : (root.darkTheme ? "#9ca3af" : "#9aa3af")
+            borderColor: enabled
+                ? (root.darkTheme ? "#c3c8d0" : "#111827")
+                : (root.darkTheme ? "#4b5563" : "#d7dce3")
+            focusBorderColor: root.darkTheme ? "#eef1f5" : "#7c8aa0"
+            iconStrokeWidth: 2.15
+            shadowEnabled: enabled
             toolTipText: root.agentRunning
                 ? qsTr("Cancel")
                 : (root.referenceBusy

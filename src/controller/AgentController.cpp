@@ -37,6 +37,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <exception>
 #include <filesystem>
@@ -81,6 +82,35 @@ bool isScriptToolName(const std::string& name)
     return name == "run_analysis_script";
 }
 
+QString toolDisplayName(const std::string& name)
+{
+    if (name == "summarize_current_target") {
+        return AgentController::tr("current target summary");
+    }
+    if (name == "list_files") {
+        return AgentController::tr("file index");
+    }
+    if (name == "search_loaded_content") {
+        return AgentController::tr("loaded source and disassembly");
+    }
+    if (name == "read_source") {
+        return AgentController::tr("source or resource file");
+    }
+    if (name == "read_disassembly") {
+        return AgentController::tr("source-file disassembly");
+    }
+    if (name == "inspect_entry_points") {
+        return AgentController::tr("entry points");
+    }
+    if (name == "read_signature_summary") {
+        return AgentController::tr("signature summary");
+    }
+    if (isScriptToolName(name)) {
+        return AgentController::tr("local analysis script");
+    }
+    return QString::fromStdString(name);
+}
+
 std::string toStdString(const QString& value)
 {
     const QByteArray bytes = value.toUtf8();
@@ -101,7 +131,13 @@ std::shared_ptr<wuwe::llm_client> createLlmClient(const AgentSettings& settings)
         .api_key = toStdString(settings.apiKey),
         .require_api_key = settings.requireApiKey,
         .model = toStdString(settings.model),
-        .timeout = 30000,
+        .timeout = 120000,
+        .stream_timeouts = {
+            .total_ms = 300000,
+            .connect_ms = 15000,
+            .first_event_ms = 45000,
+            .idle_ms = 45000,
+        },
         .referer_url = "https://www.cppmore.com/",
         .app_title = "ReArk"
     };
@@ -1009,32 +1045,51 @@ QString agentErrorMessage(std::error_code ec, const QString& message)
 }
 
 #ifdef REARK_HAS_WUWE_REASONING
-QString reasoningEventStatus(const wuwe::agent::reasoning::reasoning_event& event)
+QString reasoningEventStatus(
+    const wuwe::agent::reasoning::reasoning_event& event,
+    int modelCallCount,
+    int toolCallCount)
 {
     namespace reasoning = wuwe::agent::reasoning;
 
     switch (event.type) {
     case reasoning::reasoning_event_type::started:
-        return AgentController::tr("Thinking...");
+        return AgentController::tr("Preparing analysis context...");
     case reasoning::reasoning_event_type::model_started:
-        return AgentController::tr("Calling model...");
-    case reasoning::reasoning_event_type::tool_started:
+        return AgentController::tr("Model analysis round %1: deciding the next step...")
+            .arg(modelCallCount);
+    case reasoning::reasoning_event_type::model_first_event:
+        return AgentController::tr("Model analysis round %1: receiving response...")
+            .arg(modelCallCount);
+    case reasoning::reasoning_event_type::tool_call_building:
+        return AgentController::tr("Preparing the next evidence request...");
+    case reasoning::reasoning_event_type::tool_call_ready:
         return event.tool_call != nullptr && isScriptToolName(event.tool_call->name)
-            ? AgentController::tr("Running analysis script...")
-            : AgentController::tr("Reading analysis data...");
+            ? AgentController::tr("Local analysis script is ready to run...")
+            : AgentController::tr("Evidence request is ready...");
+    case reasoning::reasoning_event_type::tool_started:
+        return event.tool_call != nullptr
+            ? AgentController::tr("Step %1: %2...")
+                .arg(toolCallCount)
+                .arg(isScriptToolName(event.tool_call->name)
+                        ? AgentController::tr("running local analysis script")
+                        : AgentController::tr("reading %1").arg(toolDisplayName(event.tool_call->name)))
+            : AgentController::tr("Step %1: reading analysis data...").arg(toolCallCount);
     case reasoning::reasoning_event_type::tool_completed:
         if (event.tool_call != nullptr && isScriptToolName(event.tool_call->name)) {
             return event.tool_result != nullptr && event.tool_result->error_code
-                ? AgentController::tr("Analysis script failed.")
-                : AgentController::tr("Analysis script completed.");
+                ? AgentController::tr("Local analysis script failed.")
+                : AgentController::tr("Local analysis script completed.");
         }
         return event.tool_result != nullptr && event.tool_result->error_code
-            ? AgentController::tr("Analysis data read failed.")
-            : AgentController::tr("Analysis data ready.");
+            ? AgentController::tr("Evidence read failed.")
+            : AgentController::tr("Evidence collected.");
+    case reasoning::reasoning_event_type::model_completed:
+        return AgentController::tr("Model round %1 completed.").arg(modelCallCount);
     case reasoning::reasoning_event_type::reflection_started:
-        return AgentController::tr("Reviewing result...");
+        return AgentController::tr("Reviewing the answer...");
     case reasoning::reasoning_event_type::reflection_completed:
-        return AgentController::tr("Review completed");
+        return AgentController::tr("Review completed.");
     case reasoning::reasoning_event_type::plan_created:
         return AgentController::tr("Plan created");
     case reasoning::reasoning_event_type::plan_step_started:
@@ -1058,6 +1113,135 @@ QString reasoningEventStatus(const wuwe::agent::reasoning::reasoning_event& even
     case reasoning::reasoning_event_type::cancelled:
         return AgentController::tr("Analysis cancelled.");
     case reasoning::reasoning_event_type::content_delta:
+        return AgentController::tr("Writing the answer...");
+    }
+    return {};
+}
+
+QVariantMap reasoningEventActivity(const wuwe::agent::reasoning::reasoning_event& event)
+{
+    namespace reasoning = wuwe::agent::reasoning;
+
+    auto activity = [](const QString& type,
+                       const QString& title,
+                       const QString& detail,
+                       const QString& state) {
+        QVariantMap item;
+        item.insert(QStringLiteral("type"), type);
+        item.insert(QStringLiteral("title"), title);
+        item.insert(QStringLiteral("detail"), detail);
+        item.insert(QStringLiteral("state"), state);
+        return item;
+    };
+
+    switch (event.type) {
+    case reasoning::reasoning_event_type::started:
+        return activity(
+            QStringLiteral("run"),
+            AgentController::tr("Analysis started"),
+            AgentController::tr("Preparing context and available tools."),
+            QStringLiteral("active"));
+    case reasoning::reasoning_event_type::model_started:
+        return activity(
+            QStringLiteral("model"),
+            AgentController::tr("Calling model"),
+            AgentController::tr("Waiting for the first model event."),
+            QStringLiteral("active"));
+    case reasoning::reasoning_event_type::model_first_event:
+        return activity(
+            QStringLiteral("model"),
+            AgentController::tr("Model stream started"),
+            AgentController::tr("Receiving structured model events."),
+            QStringLiteral("active"));
+    case reasoning::reasoning_event_type::tool_call_building:
+        return activity(
+            QStringLiteral("prepare"),
+            AgentController::tr("Preparing analysis step"),
+            AgentController::tr("The model is selecting data or tools."),
+            QStringLiteral("active"));
+    case reasoning::reasoning_event_type::tool_call_ready:
+        return activity(
+            QStringLiteral("prepare"),
+            event.tool_call != nullptr && isScriptToolName(event.tool_call->name)
+                ? AgentController::tr("Analysis script prepared")
+                : AgentController::tr("Data request prepared"),
+            AgentController::tr("The next analysis step is ready to run."),
+            QStringLiteral("done"));
+    case reasoning::reasoning_event_type::tool_started:
+        return activity(
+            event.tool_call != nullptr && isScriptToolName(event.tool_call->name)
+                ? QStringLiteral("script")
+                : QStringLiteral("data"),
+            event.tool_call != nullptr && isScriptToolName(event.tool_call->name)
+                ? AgentController::tr("Running analysis script")
+                : AgentController::tr("Reading analysis data"),
+            event.tool_call != nullptr && isScriptToolName(event.tool_call->name)
+                ? AgentController::tr("Executing bounded local analysis.")
+                : AgentController::tr("Collecting evidence from the current package."),
+            QStringLiteral("active"));
+    case reasoning::reasoning_event_type::tool_completed: {
+        const bool failed = event.tool_result != nullptr && event.tool_result->error_code;
+        const bool script = event.tool_call != nullptr && isScriptToolName(event.tool_call->name);
+        return activity(
+            script ? QStringLiteral("script") : QStringLiteral("data"),
+            failed
+                ? (script ? AgentController::tr("Analysis script failed")
+                          : AgentController::tr("Analysis data read failed"))
+                : (script ? AgentController::tr("Analysis script completed")
+                          : AgentController::tr("Analysis data ready")),
+            failed
+                ? AgentController::tr("The step returned an error.")
+                : AgentController::tr("Evidence is available for the next model call."),
+            failed ? QStringLiteral("failed") : QStringLiteral("done"));
+    }
+    case reasoning::reasoning_event_type::model_completed:
+        return activity(
+            QStringLiteral("model"),
+            AgentController::tr("Model response received"),
+            AgentController::tr("The model call completed."),
+            QStringLiteral("done"));
+    case reasoning::reasoning_event_type::reflection_started:
+        return activity(
+            QStringLiteral("review"),
+            AgentController::tr("Reviewing result"),
+            AgentController::tr("Checking the answer before returning it."),
+            QStringLiteral("active"));
+    case reasoning::reasoning_event_type::reflection_completed:
+        return activity(
+            QStringLiteral("review"),
+            AgentController::tr("Review completed"),
+            AgentController::tr("The answer passed the review step."),
+            QStringLiteral("done"));
+    case reasoning::reasoning_event_type::content_delta:
+        return activity(
+            QStringLiteral("answer"),
+            AgentController::tr("Writing answer"),
+            AgentController::tr("Streaming the final response."),
+            QStringLiteral("active"));
+    case reasoning::reasoning_event_type::completed:
+        return activity(
+            QStringLiteral("run"),
+            AgentController::tr("Analysis complete"),
+            AgentController::tr("Ready for the next question."),
+            QStringLiteral("done"));
+    case reasoning::reasoning_event_type::failed:
+        return activity(
+            QStringLiteral("run"),
+            AgentController::tr("Analysis failed"),
+            AgentController::tr("The run stopped before a complete answer was produced."),
+            QStringLiteral("failed"));
+    case reasoning::reasoning_event_type::cancelled:
+        return activity(
+            QStringLiteral("run"),
+            AgentController::tr("Analysis cancelled"),
+            AgentController::tr("The run was stopped."),
+            QStringLiteral("failed"));
+    case reasoning::reasoning_event_type::plan_created:
+    case reasoning::reasoning_event_type::plan_step_started:
+    case reasoning::reasoning_event_type::plan_step_completed:
+    case reasoning::reasoning_event_type::plan_step_failed:
+    case reasoning::reasoning_event_type::plan_step_blocked:
+    case reasoning::reasoning_event_type::plan_revised:
         break;
     }
     return {};
@@ -1123,6 +1307,22 @@ QString reasoningErrorMessage(const wuwe::agent::reasoning::reasoning_error& err
         : message;
 }
 
+bool isReasoningBudgetExceeded(wuwe::agent::reasoning::reasoning_error_code code)
+{
+    namespace reasoning = wuwe::agent::reasoning;
+
+    switch (code) {
+    case reasoning::reasoning_error_code::model_call_budget_exceeded:
+    case reasoning::reasoning_error_code::tool_call_budget_exceeded:
+    case reasoning::reasoning_error_code::tool_round_budget_exceeded:
+    case reasoning::reasoning_error_code::planning_budget_exceeded:
+    case reasoning::reasoning_error_code::reflection_budget_exceeded:
+        return true;
+    default:
+        return false;
+    }
+}
+
 QString reasoningCancelledMessage(const wuwe::agent::reasoning::reasoning_result& result)
 {
     namespace reasoning = wuwe::agent::reasoning;
@@ -1150,11 +1350,11 @@ wuwe::agent::reasoning::reasoning_policy rearkReasoningPolicy(const std::string&
         .has_tools = true,
         .requires_tools = false
     });
-    policy.budget.max_model_calls = 12;
-    policy.budget.max_tool_calls = 36;
-    policy.budget.max_tool_rounds = 12;
-    policy.budget.max_steps = 12;
-    policy.budget.timeout = std::chrono::milliseconds { 300000 };
+    policy.budget.max_model_calls = 48;
+    policy.budget.max_tool_calls = 120;
+    policy.budget.max_tool_rounds = 32;
+    policy.budget.max_steps = 64;
+    policy.budget.timeout = std::chrono::milliseconds { 900000 };
     return policy;
 }
 #endif
@@ -1346,7 +1546,7 @@ void AgentController::ask(const QString& question)
 
     appendMessage(QStringLiteral("user"), trimmed);
     appendMessage(QStringLiteral("assistant"), {}, QStringLiteral("streaming"));
-    setStatus(tr("Thinking..."));
+    setStatus(tr("Preparing analysis context..."));
     setRunning(true);
 
     QString systemPrompt =
@@ -1406,18 +1606,53 @@ void AgentController::ask(const QString& question)
 #ifdef REARK_HAS_WUWE_REASONING
     namespace reasoning = wuwe::agent::reasoning;
 
-    auto onEvent = [self](const reasoning::reasoning_event& event) {
+    struct RunProgress {
+        std::atomic<int> modelCalls { 0 };
+        std::atomic<int> toolCalls { 0 };
+        std::atomic<bool> answerStarted { false };
+    };
+    auto progress = std::make_shared<RunProgress>();
+
+    auto onEvent = [self, progress](const reasoning::reasoning_event& event) {
         if (!self) {
             return;
         }
 
-        const QString status = reasoningEventStatus(event);
-        if (!status.isEmpty()) {
-            QMetaObject::invokeMethod(self.data(), [self, status] {
+        if (event.type == reasoning::reasoning_event_type::model_started) {
+            progress->modelCalls.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (event.type == reasoning::reasoning_event_type::tool_started) {
+            progress->toolCalls.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (event.type == reasoning::reasoning_event_type::content_delta
+            && progress->answerStarted.exchange(true, std::memory_order_relaxed)) {
+            return;
+        }
+
+        const int modelCallCount = std::max(
+            1,
+            progress->modelCalls.load(std::memory_order_relaxed));
+        const int toolCallCount = std::max(
+            1,
+            progress->toolCalls.load(std::memory_order_relaxed));
+
+        const QString status = reasoningEventStatus(event, modelCallCount, toolCallCount);
+        const QVariantMap activity = reasoningEventActivity(event);
+        if (!status.isEmpty() || !activity.isEmpty()) {
+            QMetaObject::invokeMethod(self.data(), [self, status, activity] {
                 if (!self) {
                     return;
                 }
-                self->setStatus(status);
+                if (!activity.isEmpty()) {
+                    self->recordActiveAssistantActivity(
+                        activity.value(QStringLiteral("type")).toString(),
+                        activity.value(QStringLiteral("title")).toString(),
+                        activity.value(QStringLiteral("detail")).toString(),
+                        activity.value(QStringLiteral("state")).toString());
+                }
+                if (!status.isEmpty()) {
+                    self->setStatus(status);
+                }
             }, Qt::QueuedConnection);
         }
     };
@@ -1479,12 +1714,26 @@ void AgentController::ask(const QString& question)
         if (!self) {
             return;
         }
+        const bool timedOut = error.code == reasoning::reasoning_error_code::timeout;
+        const bool budgetExceeded = isReasoningBudgetExceeded(error.code);
         QString message = reasoningErrorMessage(error);
         if (message.isEmpty()) {
             message = AgentController::tr("Analysis failed.");
         }
-        QMetaObject::invokeMethod(self.data(), [self, message] {
+        QMetaObject::invokeMethod(self.data(), [self, message, timedOut, budgetExceeded] {
             if (!self) {
+                return;
+            }
+            if (timedOut || budgetExceeded) {
+                self->setErrorMessage({});
+                self->finishInterruptedAssistantMessage(
+                    timedOut
+                        ? AgentController::tr("Analysis timed out before the model returned a final answer. Partial output was preserved; you can ask ReArk Agent to continue.")
+                        : AgentController::tr("Analysis stopped after reaching the reasoning budget. Partial output was preserved; you can ask ReArk Agent to continue from here."));
+                self->setRunning(false);
+                self->setStatus(message);
+                self->resetRun();
+                self->startPendingQuestion();
                 return;
             }
             self->setErrorMessage(message);
@@ -1610,8 +1859,19 @@ void AgentController::ask(const QString& question)
                 return;
             }
             const QString msg = agentErrorMessage(ec, fromStringView(message));
-            QMetaObject::invokeMethod(self.data(), [self, msg] {
+            const bool timedOut = ec == wuwe::agent::llm_error_code::timeout;
+            QMetaObject::invokeMethod(self.data(), [self, msg, timedOut] {
                 if (self) {
+                    if (timedOut) {
+                        self->setErrorMessage({});
+                        self->finishInterruptedAssistantMessage(
+                            AgentController::tr("Analysis timed out before the model returned a final answer. Partial output was preserved; you can ask ReArk Agent to continue."));
+                        self->setStatus(msg);
+                        self->setRunning(false);
+                        self->resetRun();
+                        self->startPendingQuestion();
+                        return;
+                    }
                     self->setErrorMessage(msg);
                     self->failActiveAssistantMessage();
                     self->setStatus(msg);
@@ -1823,6 +2083,61 @@ void AgentController::appendToActiveAssistantMessage(const QString& text)
     }
 }
 
+void AgentController::recordActiveAssistantActivity(
+    const QString& type,
+    const QString& title,
+    const QString& detail,
+    const QString& state)
+{
+    if (type.isEmpty() || title.isEmpty()
+        || activeAssistantMessage_ < 0 || activeAssistantMessage_ >= messages_.size()) {
+        return;
+    }
+
+    QVariantMap message = messages_.at(activeAssistantMessage_).toMap();
+    if (message.value(QStringLiteral("role")).toString() != QStringLiteral("assistant")) {
+        return;
+    }
+
+    QVariantList activities = message.value(QStringLiteral("activities")).toList();
+    const QString effectiveState = state.isEmpty() ? QStringLiteral("active") : state;
+    const QString time = QTime::currentTime().toString(QStringLiteral("h:mm AP"));
+
+    QVariantMap item;
+    item.insert(QStringLiteral("type"), type);
+    item.insert(QStringLiteral("title"), title);
+    item.insert(QStringLiteral("detail"), detail);
+    item.insert(QStringLiteral("state"), effectiveState);
+    item.insert(QStringLiteral("time"), time);
+
+    if (!activities.isEmpty()) {
+        QVariantMap last = activities.last().toMap();
+        if (last.value(QStringLiteral("type")).toString() == type) {
+            last.insert(QStringLiteral("title"), title);
+            last.insert(QStringLiteral("detail"), detail);
+            last.insert(QStringLiteral("state"), effectiveState);
+            last.insert(QStringLiteral("time"), time);
+            activities[activities.size() - 1] = last;
+        } else {
+            if (last.value(QStringLiteral("state")).toString() == QStringLiteral("active")
+                && effectiveState == QStringLiteral("active")) {
+                last.insert(QStringLiteral("state"), QStringLiteral("done"));
+                activities[activities.size() - 1] = last;
+            }
+            activities.append(item);
+        }
+    } else {
+        activities.append(item);
+    }
+
+    message.insert(QStringLiteral("activities"), activities);
+    messages_[activeAssistantMessage_] = message;
+    if (messageModel_ != nullptr) {
+        messageModel_->setActivities(activeAssistantMessage_, activities);
+    }
+    emit messagesChanged();
+}
+
 void AgentController::finishActiveAssistantMessage(const QString& fallbackText)
 {
     if (assistantDeltaTimer_ != nullptr) {
@@ -1849,6 +2164,50 @@ void AgentController::finishActiveAssistantMessage(const QString& fallbackText)
         messageModel_->finishStreaming(activeAssistantMessage_, fallbackText);
     }
     activeAssistantMessage_ = -1;
+    rebuildTranscript();
+}
+
+void AgentController::finishInterruptedAssistantMessage(const QString& notice)
+{
+    if (assistantDeltaTimer_ != nullptr) {
+        assistantDeltaTimer_->stop();
+    }
+    flushPendingAssistantDelta();
+
+    if (activeAssistantMessage_ < 0 || activeAssistantMessage_ >= messages_.size()) {
+        return;
+    }
+
+    QVariantMap message = messages_.at(activeAssistantMessage_).toMap();
+    if (message.value(QStringLiteral("state")).toString() != QStringLiteral("streaming")) {
+        activeAssistantMessage_ = -1;
+        return;
+    }
+
+    const QString existingText = message.value(QStringLiteral("text")).toString();
+    const QString trimmedNotice = notice.trimmed();
+    const bool emptyAssistantText = existingText.trimmed().isEmpty();
+    const QString finalText = emptyAssistantText || trimmedNotice.isEmpty()
+        ? (emptyAssistantText ? trimmedNotice : existingText)
+        : existingText + QStringLiteral("\n\n") + trimmedNotice;
+
+    message.insert(QStringLiteral("text"), finalText);
+    message.insert(QStringLiteral("state"), QStringLiteral("done"));
+    messages_[activeAssistantMessage_] = message;
+    if (messageModel_ != nullptr) {
+        if (emptyAssistantText) {
+            messageModel_->finishStreaming(activeAssistantMessage_, trimmedNotice);
+        } else {
+            if (!trimmedNotice.isEmpty()) {
+                messageModel_->appendText(
+                    activeAssistantMessage_,
+                    QStringLiteral("\n\n") + trimmedNotice);
+            }
+            messageModel_->finishStreaming(activeAssistantMessage_, {});
+        }
+    }
+    activeAssistantMessage_ = -1;
+    emit messagesChanged();
     rebuildTranscript();
 }
 
