@@ -1,13 +1,22 @@
 #include "controller/PythonRuntimeResolver.h"
 
+#if defined(REARK_HAS_WUWE) && __has_include(<wuwe/agent/execution/controlled_process_backend.hpp>)
+#include <wuwe/agent/execution/controlled_process_backend.hpp>
+#define REARK_HAS_WUWE_PYTHON_PROBE 1
+#endif
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QStandardPaths>
+#ifdef REARK_HAS_WUWE_PYTHON_PROBE
+#include <QTemporaryDir>
+#else
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
 #include <QProcessEnvironment>
-#include <QStandardPaths>
+#endif
 
 namespace {
 
@@ -18,6 +27,13 @@ struct PythonCandidate {
     QString source;
     bool requireExistingFile = true;
 };
+
+#ifdef REARK_HAS_WUWE_PYTHON_PROBE
+QString fromFilesystemPath(const std::filesystem::path& path)
+{
+    return QString::fromStdWString(path.wstring());
+}
+#endif
 
 QString envString(const char* name)
 {
@@ -107,8 +123,118 @@ QVector<PythonCandidate> candidatesFor(const QString& configuredPath)
     return candidates;
 }
 
+#ifdef REARK_HAS_WUWE_PYTHON_PROBE
+PythonRuntimeProbe::Status fromWuweStatus(wuwe::agent::execution::python_interpreter_status status)
+{
+    namespace execution = wuwe::agent::execution;
+    switch (status) {
+    case execution::python_interpreter_status::ok:
+        return PythonRuntimeProbe::Status::Ok;
+    case execution::python_interpreter_status::empty_path:
+        return PythonRuntimeProbe::Status::NotConfigured;
+    case execution::python_interpreter_status::not_found:
+        return PythonRuntimeProbe::Status::NotFound;
+    case execution::python_interpreter_status::not_executable:
+        return PythonRuntimeProbe::Status::NotExecutable;
+    case execution::python_interpreter_status::permission_denied:
+        return PythonRuntimeProbe::Status::PermissionDenied;
+    case execution::python_interpreter_status::startup_timeout:
+        return PythonRuntimeProbe::Status::TimedOut;
+    case execution::python_interpreter_status::invalid_python:
+        return PythonRuntimeProbe::Status::InvalidPython;
+    case execution::python_interpreter_status::unsupported_version:
+        return PythonRuntimeProbe::Status::UnsupportedVersion;
+    case execution::python_interpreter_status::launch_failed:
+        return PythonRuntimeProbe::Status::LaunchFailed;
+    }
+    return PythonRuntimeProbe::Status::LaunchFailed;
+}
+
+QString wuweProbeDetail(
+    const wuwe::agent::execution::python_interpreter_probe_result& probe,
+    const PythonRuntimeProbe& result)
+{
+    auto metadataValue = [&probe](const char* key) {
+        const auto found = probe.metadata.find(key);
+        return found == probe.metadata.end() ? QString {} : QString::fromStdString(found->second);
+    };
+
+    const QString launchError = metadataValue("launch_error_message");
+    if (!launchError.isEmpty()) {
+        return launchError;
+    }
+
+    const QString filesystemError = metadataValue("filesystem_error_message");
+    if (!filesystemError.isEmpty()) {
+        return filesystemError;
+    }
+
+    const QString parseError = metadataValue("parse_error");
+    if (!parseError.isEmpty()) {
+        return parseError;
+    }
+
+    const QString probeError = metadataValue("probe_error");
+    if (!probeError.isEmpty()) {
+        return probeError;
+    }
+
+    const QString stderrText = QString::fromStdString(probe.stderr_text).trimmed();
+    if (!stderrText.isEmpty()) {
+        return stderrText;
+    }
+
+    return PythonRuntimeResolver::userMessage(result);
+}
+
+PythonRuntimeProbe probeCandidateWithWuwe(const PythonCandidate& candidate)
+{
+    namespace execution = wuwe::agent::execution;
+
+    PythonRuntimeProbe result;
+    result.configuredPath = candidate.path;
+    result.resolvedPath = normalizedPath(candidate.path);
+    result.source = candidate.source;
+
+    if (result.resolvedPath.trimmed().isEmpty()) {
+        result.status = PythonRuntimeProbe::Status::NotConfigured;
+        result.detail = PythonRuntimeResolver::userMessage(result);
+        return result;
+    }
+
+    QTemporaryDir probeWorkdir(
+        QDir::temp().filePath(QStringLiteral("ReArk-python-probe-XXXXXX")));
+    if (!probeWorkdir.isValid()) {
+        result.status = PythonRuntimeProbe::Status::LaunchFailed;
+        result.detail = QCoreApplication::translate(
+            "PythonRuntimeResolver",
+            "Failed to create a Python probe work directory.");
+        return result;
+    }
+
+    const auto probe = execution::probe_python_interpreter({
+        .interpreter = PythonRuntimeResolver::toFilesystemPath(result.resolvedPath),
+        .workdir = PythonRuntimeResolver::toFilesystemPath(probeWorkdir.path()),
+        .env = {},
+        .timeout = std::chrono::milliseconds { kPythonProbeTimeoutMs },
+    });
+
+    result.status = fromWuweStatus(probe.status);
+    if (!probe.resolved_path.empty()) {
+        result.resolvedPath = fromFilesystemPath(probe.resolved_path);
+    }
+    result.version = QString::fromStdString(probe.version);
+    result.executable = QString::fromStdString(probe.executable);
+    result.detail = wuweProbeDetail(probe, result);
+    return result;
+}
+#endif
+
 PythonRuntimeProbe probeCandidate(const PythonCandidate& candidate)
 {
+#ifdef REARK_HAS_WUWE_PYTHON_PROBE
+    return probeCandidateWithWuwe(candidate);
+#else
     PythonRuntimeProbe result;
     result.configuredPath = candidate.path;
     result.resolvedPath = normalizedPath(candidate.path);
@@ -127,7 +253,7 @@ PythonRuntimeProbe probeCandidate(const PythonCandidate& candidate)
         return result;
     }
     if (candidate.requireExistingFile && !info.isExecutable()) {
-        result.status = PythonRuntimeProbe::Status::LaunchFailed;
+        result.status = PythonRuntimeProbe::Status::NotExecutable;
         result.detail = PythonRuntimeResolver::userMessage(result);
         return result;
     }
@@ -194,6 +320,7 @@ PythonRuntimeProbe probeCandidate(const PythonCandidate& candidate)
     result.resolvedPath = normalizedPath(result.executable);
     result.detail = PythonRuntimeResolver::userMessage(result);
     return result;
+#endif
 }
 
 } // namespace
@@ -247,12 +374,18 @@ QString PythonRuntimeResolver::statusLabel(const PythonRuntimeProbe& probe)
         return QCoreApplication::translate("PythonRuntimeResolver", "Not configured");
     case PythonRuntimeProbe::Status::NotFound:
         return QCoreApplication::translate("PythonRuntimeResolver", "Not found");
+    case PythonRuntimeProbe::Status::NotExecutable:
+        return QCoreApplication::translate("PythonRuntimeResolver", "Not executable");
+    case PythonRuntimeProbe::Status::PermissionDenied:
+        return QCoreApplication::translate("PythonRuntimeResolver", "Permission denied");
     case PythonRuntimeProbe::Status::LaunchFailed:
         return QCoreApplication::translate("PythonRuntimeResolver", "Launch failed");
     case PythonRuntimeProbe::Status::TimedOut:
         return QCoreApplication::translate("PythonRuntimeResolver", "Startup timed out");
     case PythonRuntimeProbe::Status::InvalidPython:
         return QCoreApplication::translate("PythonRuntimeResolver", "Invalid Python");
+    case PythonRuntimeProbe::Status::UnsupportedVersion:
+        return QCoreApplication::translate("PythonRuntimeResolver", "Unsupported Python");
     }
     return QCoreApplication::translate("PythonRuntimeResolver", "Unavailable");
 }
@@ -268,12 +401,18 @@ QString PythonRuntimeResolver::userMessage(const PythonRuntimeProbe& probe)
         return probe.configuredPath.isEmpty()
             ? QCoreApplication::translate("PythonRuntimeResolver", "No Python interpreter was found. Local analysis scripts are disabled.")
             : QCoreApplication::translate("PythonRuntimeResolver", "Python interpreter was not found at the configured path.");
+    case PythonRuntimeProbe::Status::NotExecutable:
+        return QCoreApplication::translate("PythonRuntimeResolver", "The selected Python path is not an executable file.");
+    case PythonRuntimeProbe::Status::PermissionDenied:
+        return QCoreApplication::translate("PythonRuntimeResolver", "ReArk does not have permission to inspect the selected Python interpreter.");
     case PythonRuntimeProbe::Status::LaunchFailed:
         return QCoreApplication::translate("PythonRuntimeResolver", "Python interpreter could not be launched.");
     case PythonRuntimeProbe::Status::TimedOut:
         return QCoreApplication::translate("PythonRuntimeResolver", "Python interpreter did not start in time.");
     case PythonRuntimeProbe::Status::InvalidPython:
         return QCoreApplication::translate("PythonRuntimeResolver", "The selected executable did not behave like Python.");
+    case PythonRuntimeProbe::Status::UnsupportedVersion:
+        return QCoreApplication::translate("PythonRuntimeResolver", "Python 3 is required for local analysis scripts.");
     }
     return QCoreApplication::translate("PythonRuntimeResolver", "Python runtime is unavailable.");
 }

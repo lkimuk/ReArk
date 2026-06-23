@@ -11,9 +11,12 @@ struct PythonRuntimeProbe {
         Ok,
         NotConfigured,
         NotFound,
+        NotExecutable,
+        PermissionDenied,
         LaunchFailed,
         TimedOut,
-        InvalidPython
+        InvalidPython,
+        UnsupportedVersion
     };
 
     Status status = Status::NotFound;

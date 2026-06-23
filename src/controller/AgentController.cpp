@@ -329,6 +329,42 @@ QString boundedSnapshotText(const QString& text, int maxChars)
         + QStringLiteral("\n\n[truncated to %1 characters for the Agent snapshot]").arg(limit);
 }
 
+QString responseLanguageInstruction(const QString& question)
+{
+    int latinLetters = 0;
+    int cjkCharacters = 0;
+    for (const QChar ch : question) {
+        const ushort unicode = ch.unicode();
+        if ((unicode >= u'A' && unicode <= u'Z') || (unicode >= u'a' && unicode <= u'z')) {
+            ++latinLetters;
+        } else if ((unicode >= 0x3400 && unicode <= 0x9fff)
+            || (unicode >= 0xf900 && unicode <= 0xfaff)) {
+            ++cjkCharacters;
+        }
+    }
+
+    if (latinLetters >= 3 && cjkCharacters == 0) {
+        return QStringLiteral(
+            "\n\nResponse language contract:\n"
+            "- The user's latest question is in English.\n"
+            "- Answer in English. Do not answer in Chinese because of the UI language, tool output, or target metadata.\n"
+            "- Keep identifiers, package names, file paths, API names, and quoted source text unchanged.");
+    }
+    if (cjkCharacters > 0 && latinLetters < cjkCharacters * 2) {
+        return QStringLiteral(
+            "\n\nResponse language contract:\n"
+            "- The user's latest question is in Chinese.\n"
+            "- Answer in Chinese.\n"
+            "- Keep identifiers, package names, file paths, API names, and quoted source text unchanged.");
+    }
+
+    return QStringLiteral(
+        "\n\nResponse language contract:\n"
+        "- Answer in the dominant natural language of the user's latest question.\n"
+        "- Ignore the UI language and tool-output language when choosing the response language.\n"
+        "- Keep identifiers, package names, file paths, API names, and quoted source text unchanged.");
+}
+
 QStringList queryTerms(const QString& query)
 {
     return query.trimmed().toCaseFolded().split(
@@ -1504,7 +1540,10 @@ void AgentController::ask(const QString& question)
         runtime_->executionRuntime = std::make_unique<execution::execution_runtime>(
             execution::make_controlled_process_backend(execution::controlled_process_backend_config {
                 .python_interpreter = PythonRuntimeResolver::toFilesystemPath(pythonRuntime.resolvedPath),
-                .fallback_workdir = workdir
+                .fallback_workdir = workdir,
+                .use_job_object = true,
+                .validate_python_on_start = true,
+                .python_startup_timeout = std::chrono::milliseconds { 3000 }
             }),
             rearkExecutionPolicy(workdir),
             &runtime_->executionAuditSink,
@@ -1589,6 +1628,7 @@ void AgentController::ask(const QString& question)
         .arg(snapshot->fileList.isEmpty()
                 ? QStringLiteral("<none>")
                 : boundedSnapshotText(snapshot->fileList, 12000));
+    systemPrompt += responseLanguageInstruction(trimmed);
 
     QPointer<AgentController> self(this);
 
